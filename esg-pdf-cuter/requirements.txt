@@ -1,7 +1,17 @@
+cffi==2.0.0
+charset-normalizer==3.4.6
+cryptography==46.0.5
 et_xmlfile==2.0.0
 numpy==2.4.3
 openpyxl==3.1.5
 pandas==3.0.1
+pdfminer.six==20251230
+pdfplumber==0.11.9
+pillow==12.1.1
+pycparser==3.0
 PyMuPDF==1.27.2.2
+pyobjc-core==12.1
+pyobjc-framework-Cocoa==12.1
+pypdfium2==5.6.0
 python-dateutil==2.9.0.post0
 six==1.17.0

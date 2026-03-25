@@ -41,45 +41,33 @@ def available_years():
 # App Icon（Dock / 視窗）
 # ============================================================
 def set_app_icon(root: tk.Tk, emoji: str = "🌱") -> None:
-    """把 emoji 渲染成圖片並設為視窗與 Dock 圖示（macOS 透過 AppKit）。"""
+    """macOS：用 AppKit NSAttributedString 渲染 emoji → 設定 Dock 圖示。"""
     try:
+        from AppKit import NSApplication, NSImage, NSAttributedString, NSFont
+        from Foundation import NSMakeSize
+
+        size   = 256
+        ns_img = NSImage.alloc().initWithSize_(NSMakeSize(size, size))
+        ns_img.lockFocus()
+        attrs  = {"NSFont": NSFont.systemFontOfSize_(200)}
+        s      = NSAttributedString.alloc().initWithString_attributes_(emoji, attrs)
+        s.drawAtPoint_((20, 20))
+        ns_img.unlockFocus()
+
+        NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
+
+        # tkinter 視窗圖示（用 TIFFRepresentation 轉 PNG）
         import base64
         from io import BytesIO
-
-        size = 256
-        img  = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-
-        font = None
-        for fp in ("/System/Library/Fonts/Apple Color Emoji.ttc",
-                   "/System/Library/Fonts/AppleColorEmoji.ttf"):
-            try:
-                font = ImageFont.truetype(fp, size - 20)
-                break
-            except Exception:
-                pass
-
-        if font:
-            draw.text((10, 10), emoji, font=font, embedded_color=True)
-
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        png_bytes = buf.getvalue()
-
-        # macOS：透過 AppKit 設定 Dock 圖示
-        try:
-            from AppKit import NSApplication, NSImage
-            from Foundation import NSData
-            data     = NSData.dataWithBytes_length_(png_bytes, len(png_bytes))
-            ns_image = NSImage.alloc().initWithData_(data)
-            NSApplication.sharedApplication().setApplicationIconImage_(ns_image)
-        except Exception:
-            pass
-
-        # 所有平台：設定 tkinter 視窗圖示
-        photo = tk.PhotoImage(data=base64.b64encode(png_bytes).decode())
+        from PIL import Image as PILImage
+        tiff  = ns_img.TIFFRepresentation()
+        raw   = bytes(tiff)
+        pil   = PILImage.open(BytesIO(raw))
+        buf   = BytesIO()
+        pil.save(buf, format="PNG")
+        photo = tk.PhotoImage(data=base64.b64encode(buf.getvalue()).decode())
         root.iconphoto(True, photo)
-        root._icon_ref = photo  # 防止被 GC 回收
+        root._icon_ref = photo
 
     except Exception:
         pass
