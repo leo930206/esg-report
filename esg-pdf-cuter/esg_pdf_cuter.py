@@ -12,6 +12,11 @@ from datetime import datetime
 import fitz           # PyMuPDF
 import pandas as pd
 
+__version__ = "2.2"
+# v2.0 — 初版 GUI + Union-Find 聚類 + EXPAND_PT=20 + 文字遮罩
+# v2.1 — 加入 A/B/C/D 過濾（QR、全頁圖、裝飾線、路徑數門檻）
+# v2.2 — 移除文字遮罩/文字擴張，EXPAND_PT=20→50
+
 # ============================================================
 # 路徑設定
 # ============================================================
@@ -394,7 +399,7 @@ def create_startup_window():
     selected_years = []
 
     root = tk.Tk()
-    root.title("🌱 ESG 圖表萃取系統")
+    root.title(f"🌱 ESG 圖表萃取系統 v{__version__}")
     root.geometry("480x380")
     root.configure(bg=APPLE_BG)
     root.resizable(False, False)
@@ -469,7 +474,7 @@ def create_startup_window():
 def create_progress_window(years):
     year_label = '、'.join(str(y) for y in years)
     root = tk.Tk()
-    root.title(f"🌱 ESG 圖表萃取系統 | {year_label} 年")
+    root.title(f"🌱 ESG 圖表萃取系統 v{__version__} | {year_label} 年")
     root.geometry("1000x700")
     root.configure(bg=APPLE_BG)
     root.resizable(True, True)
