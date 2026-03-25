@@ -12,10 +12,11 @@ from datetime import datetime
 import fitz           # PyMuPDF
 import pandas as pd
 
-__version__ = "2.2"
+__version__ = "2.3"
 # v2.0 — 初版 GUI + Union-Find 聚類 + EXPAND_PT=20 + 文字遮罩
 # v2.1 — 加入 A/B/C/D 過濾（QR、全頁圖、裝飾線、路徑數門檻）
 # v2.2 — 移除文字遮罩/文字擴張，EXPAND_PT=20→50
+# v2.3 — CLUSTER_GAP_PT=80→40，避免同頁兩張圖被合併成一個框
 
 # ============================================================
 # 路徑設定
@@ -109,7 +110,7 @@ ui_stats = {
 # 萃取參數
 # ============================================================
 RENDER_SCALE     = 3      # 渲染倍率（3x = 216 DPI）
-CLUSTER_GAP_PT   = 80    # 向量路徑聚類距離（PDF 點座標，80pt ≈ 1.1 吋）
+CLUSTER_GAP_PT   = 40    # 向量路徑聚類距離（PDF 點座標）
 EXPAND_PT        = 50    # 偵測框擴張距離（加大以涵蓋軸標籤/圖例）
 MIN_AREA_PCT     = 0.5   # 最小面積佔比（%），過濾微小雜訊
 MAX_AREA_PCT     = 90    # 最大面積佔比（%），Vector 過濾整頁背景
