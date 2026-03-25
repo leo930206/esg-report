@@ -222,6 +222,9 @@ class DetailWindow:
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
         hsb.pack(side=tk.BOTTOM, fill=tk.X)
         self.tree.pack(fill=tk.BOTH, expand=True)
+        self.tree.bind('<MouseWheel>',
+                       lambda e: (self.tree.yview_scroll(int(-1*(e.delta/120)), 'units'),
+                                  'break')[1])
 
         # 整合下載 df + 萃取資訊
         self._build_rows(dl_row, ct_row)
@@ -258,8 +261,8 @@ class DetailWindow:
                 # 嘗試從檔名欄位取 stem
                 raw = str(r.get('file_name', r.get('filename', r.get('檔名', ''))))
                 stem = Path(raw).stem if raw else ''
-                code = str(r.get('stock_code', r.get('代碼', '')))
-                name = str(r.get('company_name', r.get('公司名稱', '')))
+                code   = str(r.get('stock_id', r.get('stock_code', r.get('代碼', ''))))
+                name   = str(r.get('company_name', r.get('公司名稱', '')))
                 status = str(r.get('status', r.get('狀態', '')))
 
                 extracted = '✅' if stem in processed_stems else (
@@ -366,8 +369,14 @@ class Dashboard:
                        lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
         canvas.bind('<Configure>',
                     lambda e: canvas.itemconfig(self.body_window, width=e.width))
-        canvas.bind_all('<MouseWheel>',
-                        lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), 'units'))
+        self._canvas = canvas
+        canvas.bind('<Enter>',
+                    lambda _: canvas.bind_all('<MouseWheel>', self._on_canvas_scroll))
+        canvas.bind('<Leave>',
+                    lambda _: canvas.unbind_all('<MouseWheel>'))
+
+    def _on_canvas_scroll(self, e):
+        self._canvas.yview_scroll(int(-1 * (e.delta / 120)), 'units')
 
     # ── 自動重整排程 ────────────────────────────────────────
     def _schedule_auto_refresh(self):
@@ -478,7 +487,7 @@ class Dashboard:
             ('🔒 已確認無',  10, 'center'),
             ('❌ 失敗',      8,  'center'),
             ('共',           6,  'center'),
-            ('進度',        14, 'center'),
+            ('進度',        18, 'center'),
         ])
         for year, s in stats.items():
             if s.get('_missing'):
@@ -497,7 +506,7 @@ class Dashboard:
             total   = s.get('_total', 1) or 1
             success = s.get('成功', 0)
             pct     = int(success / total * 100)
-            bar     = '█' * (pct // 10) + '░' * (10 - pct // 10)
+            bar     = '█' * (pct // 20) + '░' * (5 - pct // 20)
 
             ct = self._ct_stats.get(year, {})
             self._table_row([
@@ -508,7 +517,7 @@ class Dashboard:
                 (str(s.get('下載失敗', 0)),          8,  'center',
                     APPLE_RED if s.get('下載失敗', 0) else APPLE_GREY),
                 (str(total),                        6,  'center', APPLE_TEXT),
-                (f"{bar} {pct}%",                   14, 'center', APPLE_BLUE),
+                (f"{bar} {pct}%",                   18, 'center', APPLE_BLUE),
             ], on_click=lambda y=year, ds=s, cs=ct: DetailWindow.open(y, ds, cs))
 
     def _build_cutter_section(self, stats: dict):
@@ -520,14 +529,14 @@ class Dashboard:
             ('⏳ 待處理',    9,  'center'),
             ('🖼 圖片數',   11, 'center'),
             ('⚠️ 亂碼公司', 10, 'center'),
-            ('進度',        14, 'center'),
+            ('進度',        18, 'center'),
         ])
         for year, s in stats.items():
             processed = s['processed']
             pending   = s['pending']
             total     = processed + pending or 1
             pct       = int(processed / total * 100)
-            bar       = '█' * (pct // 10) + '░' * (10 - pct // 10)
+            bar       = '█' * (pct // 20) + '░' * (5 - pct // 20)
 
             if processed == 0 and pending == 0:
                 status_text  = '尚無資料'
