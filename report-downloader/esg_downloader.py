@@ -1441,10 +1441,15 @@ def run_download():
     threading.Thread(target=network_monitor, daemon=True).start()
     download_started_event.set()  # 通知 window_manager 執行緒已啟動，可開進度視窗
 
+    # 抓取這支 Python 檔案所在的資料夾路徑
+    current_dir = Path(__file__).parent
+    # 組合出 Excel 檔案的完整絕對路徑
+    file_path = current_dir / "tw_listed.xlsx"
+
     try:
-        df_companies = pd.read_excel("tw_listed.xlsx", engine='openpyxl')
+        df_companies = pd.read_excel(file_path, engine='openpyxl')
     except FileNotFoundError:
-        log("❌ 找不到 tw_listed.xlsx，請確認檔案與程式在同一資料夾", 'error')
+        log(f"❌ 找不到 {file_path}，請確認檔案是否存在", 'error')
         program_done.set()
         return
     except Exception as e:
