@@ -1,5 +1,14 @@
+"""
+esg_pdf_cuter_v1_3.py
+v1_3 核心邏輯的 GUI 版本，供與 esg_pdf_cuter.py 比較萃取品質。
+
+差異：
+- Vector：全頁路徑合併成「一個大框」+ 80pt 擴張（不做 Union-Find 聚類）
+- 不做文字遮罩（MASK_UNRELATED）
+- 不做 QR code / 全頁圖過濾
+- 輸出目錄為 images_v1_3/（與 images/ 並存）
+"""
 import os
-import sys
 import subprocess
 import threading
 import queue
@@ -13,33 +22,20 @@ from datetime import datetime
 import fitz           # PyMuPDF
 import pandas as pd
 
-__version__ = "2.5"
-# v2.0 — 初版 GUI + Union-Find 聚類 + EXPAND_PT=20 + 文字遮罩
-# v2.1 — 加入 A/B/C/D 過濾（QR、全頁圖、裝飾線、路徑數門檻）
-# v2.2 — 移除文字遮罩/文字擴張，EXPAND_PT=20→50
-# v2.3 — CLUSTER_GAP_PT=80→40，避免同頁兩張圖被合併成一個框
-# v2.4 — 恢復 texts/ 全頁文字存檔輸出
-# v2.5 — 圖片改 JPEG q85 + RENDER_SCALE=2；亂碼頁記錄至 garbled_pages.txt
-
-DASHBOARD_PY = Path(__file__).parent.parent / "esg-dashboard" / "dashboard.py"
-
-def _open_dashboard():
-    if DASHBOARD_PY.exists():
-        subprocess.Popen([sys.executable, str(DASHBOARD_PY)])
-
 # ============================================================
 # 路徑設定
 # ============================================================
 BASE_DIR = Path(__file__).parent.absolute()
-DATA_DIR = BASE_DIR.parent / "data"          # 統一輸出根目錄
+DATA_DIR = BASE_DIR.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
+
+IMG_SUBDIR = "images_v1_3"      # 輸出子資料夾名稱
 
 def year_dir(year: str) -> Path:
     return DATA_DIR / str(year)
 
 def year_excel(year: str) -> Path:
-    """每個年份各自的萃取統計 Excel 路徑"""
-    return year_dir(year) / f"ESG_Extract_Results_{year}.xlsx"
+    return year_dir(year) / f"ESG_Extract_Results_v1_3_{year}.xlsx"
 
 def _year_range():
     return range(2015, 2025)
@@ -55,7 +51,6 @@ def available_years():
 # App Icon（Dock / 視窗）
 # ============================================================
 def set_app_icon(root: tk.Tk, emoji: str = "🌱") -> None:
-    """macOS：用 AppKit NSAttributedString 渲染 emoji → 設定 Dock 圖示。"""
     try:
         from AppKit import NSApplication, NSImage, NSAttributedString, NSFont
         from Foundation import NSMakeSize
@@ -70,7 +65,6 @@ def set_app_icon(root: tk.Tk, emoji: str = "🌱") -> None:
 
         NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
 
-        # tkinter 視窗圖示（用 TIFFRepresentation 轉 PNG）
         import base64
         from io import BytesIO
         from PIL import Image as PILImage
@@ -109,200 +103,77 @@ FONT_LOG   = ('Menlo', 9)
 log_queue    = queue.Queue()
 program_done = threading.Event()
 pause_event  = threading.Event()
-paused_event = threading.Event()   # 執行緒真正停下來才 set
+paused_event = threading.Event()
 
 ui_stats = {
     'total': 0, 'done': 0, 'images': 0, 'skipped': 0, 'error': 0,
 }
 
 # ============================================================
-# 萃取參數
+# 萃取參數（v1_3 邏輯）
 # ============================================================
-RENDER_SCALE     = 2      # 渲染倍率（2x = 144 DPI，配合 JPEG 輸出）
-CLUSTER_GAP_PT   = 40    # 向量路徑聚類距離（PDF 點座標）
-EXPAND_PT        = 50    # 偵測框擴張距離（加大以涵蓋軸標籤/圖例）
-MIN_AREA_PCT     = 0.5   # 最小面積佔比（%），過濾微小雜訊
-MAX_AREA_PCT     = 90    # 最大面積佔比（%），Vector 過濾整頁背景
-MIN_DIM_PT       = 100   # 最小寬/高（PDF 點），過濾細長雜訊
-MAX_PAGE_RATIO   = 0.95  # 超過此比例視為整頁背景（width 判斷）
-MIN_PATHS        = 10    # 頁面向量路徑數 >= 此值才做聚類
-
-# [A] QR code 過濾：長寬比接近 1:1 且面積極小 → 跳過
-QR_ASPECT_MIN    = 0.8   # 長寬比下限（width/height）
-QR_ASPECT_MAX    = 1.25  # 長寬比上限
-QR_MAX_AREA_PCT  = 9.0   # Raster 面積 < 此值（%）且為正方形 → 視為 QR code
-
-# [B] Raster 全頁圖過濾：章節封面照片
-RASTER_MAX_AREA_PCT = 60  # Raster 專屬最大面積佔比（%）
-
-# [C] Vector 裝飾線過濾：扁平 cluster 且位於頁首/頁尾區域 → 跳過
-DECO_ZONE_PCT        = 0.12  # 頁面頂/底各 12% 為「裝飾區」
-DECO_MAX_HT_PT       = 40    # cluster 高度 < 此值（pt）才可能是裝飾線
-DECO_MIN_WIDTH_RATIO = 0.65  # cluster 寬度 > 頁面此比例才算「橫跨型裝飾」
-
-# [D] Vector cluster 路徑數門檻：過少代表是裝飾圓形/單一 icon → 跳過
-MIN_CLUSTER_PATHS = 5    # cluster 內原始路徑數 < 此值 → 跳過
-
-SAVE_TXT = True  # 每頁另存全文 .txt 至 texts/ 資料夾
+RENDER_SCALE    = 3      # 渲染倍率（3x = 216 DPI）
+EXPAND_PT       = 80     # 向量框擴張距離（比 esg_pdf_cuter.py 的 20pt 大）
+MIN_AREA_PCT    = 0.5    # 最小面積佔比（%）
+MAX_AREA_PCT    = 90     # 最大面積佔比（%）
+MIN_PATHS       = 10     # 頁面路徑數 >= 此值才偵測 Vector
+MIN_DIM_PT      = 100    # 最小寬/高（pt）
+MAX_PAGE_RATIO  = 0.95   # 超過此比例視為整頁背景
 
 # ============================================================
-# 核心函式
+# 核心函式（v1_3：單一 union + 80pt 擴張）
 # ============================================================
-def _cluster_drawing_rects(rects: list, gap: float) -> list[tuple]:
-    """
-    把向量路徑的 fitz.Rect 用 Union-Find 聚類。
-    兩個 Rect 若互相擴張 gap/2 後重疊，就歸同一群。
-    回傳每群 (合併後的 fitz.Rect, 路徑數量) 列表。
-    """
-    if not rects:
-        return []
-
-    n = len(rects)
-    parent = list(range(n))
-
-    def find(x):
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def union(a, b):
-        parent[find(a)] = find(b)
-
-    half = gap / 2
-    for i in range(n):
-        r1_exp = rects[i] + (-half, -half, half, half)
-        for j in range(i + 1, n):
-            r2_exp = rects[j] + (-half, -half, half, half)
-            if (r1_exp & r2_exp).is_valid:
-                union(i, j)
-
-    groups: dict[int, fitz.Rect] = {}
-    counts: dict[int, int] = {}
-    for i in range(n):
-        root = find(i)
-        if root in groups:
-            groups[root] |= rects[i]
-            counts[root] += 1
-        else:
-            groups[root] = rects[i]
-            counts[root] = 1
-
-    return [(groups[k], counts[k]) for k in groups]
-
-
-def _detect_chart_regions(page) -> list[tuple]:
-    """
-    偵測頁面上的圖表區域，回傳 (fitz.Rect, type_str) 列表。
-    type_str 為 'Raster' 或 'Vector'。
-    """
-    page_rect = page.rect
-    candidates = []
-
-    page_area = page_rect.width * page_rect.height
-
-    # 方法一：點陣圖片
-    for img_info in page.get_images(full=True):
-        xref = img_info[0]
-        for r in page.get_image_rects(xref):
-            if r.width <= 50 or r.height <= 50:
-                continue
-            area_pct = r.width * r.height / page_area * 100
-
-            # [A] QR code 過濾：正方形且極小
-            aspect = r.width / r.height if r.height > 0 else 0
-            if QR_ASPECT_MIN <= aspect <= QR_ASPECT_MAX and area_pct < QR_MAX_AREA_PCT:
-                continue
-
-            # [B] Raster 全頁圖過濾：章節封面/背景照片
-            if area_pct > RASTER_MAX_AREA_PCT:
-                continue
-
-            candidates.append((r, 'Raster'))
-
-    # 方法二：向量圖形聚類
-    paths = page.get_drawings()
-    drawing_rects = [
-        p["rect"] for p in paths
-        if p["rect"].width > 5 and p["rect"].height > 5
-    ]
-
-    if len(drawing_rects) >= MIN_PATHS:
-        clusters = _cluster_drawing_rects(drawing_rects, CLUSTER_GAP_PT)
-        for cluster_rect, path_count in clusters:
-            # [D] 路徑數門檻：單一裝飾形狀通常只有 1~3 條路徑
-            if path_count < MIN_CLUSTER_PATHS:
-                continue
-
-            expanded = cluster_rect + (-EXPAND_PT, -EXPAND_PT, EXPAND_PT, EXPAND_PT)
-            expanded &= page_rect          # 不超出頁面邊界
-            if not (expanded.width > MIN_DIM_PT and expanded.height > MIN_DIM_PT
-                    and expanded.width < page_rect.width * MAX_PAGE_RATIO):
-                continue
-
-            # [C] 裝飾線過濾：扁平 cluster 且位於頁首/頁尾區域
-            in_header = expanded.y0 < page_rect.height * DECO_ZONE_PCT
-            in_footer = expanded.y1 > page_rect.height * (1 - DECO_ZONE_PCT)
-            is_flat   = (expanded.height < DECO_MAX_HT_PT
-                         and expanded.width > page_rect.width * DECO_MIN_WIDTH_RATIO)
-            if (in_header or in_footer) and is_flat:
-                continue
-
-            candidates.append((expanded, 'Vector'))
-
-    return candidates
-
-
 def process_pdf(pdf_path: str, year: str) -> list[dict]:
-    """
-    偵測單一 PDF 每頁的圖表區域（點陣圖 + 向量圖聚類），
-    高解析度裁切後存成 PNG。
-    """
     doc       = fitz.open(pdf_path)
     file_stem = Path(pdf_path).stem
     base_dir  = DATA_DIR / str(year) / file_stem
-    img_dir   = base_dir / "images"
-    txt_dir   = base_dir / "texts"
+    img_dir   = base_dir / IMG_SUBDIR
     img_dir.mkdir(parents=True, exist_ok=True)
-    if SAVE_TXT:
-        txt_dir.mkdir(parents=True, exist_ok=True)
 
     results: list[dict] = []
-    garbled_page_nums: list[int] = []
 
     for page_index, page in enumerate(doc):
         page_num  = page_index + 1
         try:
-            page_area = page.rect.width * page.rect.height
+            page_rect = page.rect
+            page_area = page_rect.width * page_rect.height
+            candidates = []
 
-            # ── 全頁文字存檔（每頁一份）──
-            if SAVE_TXT:
-                page_text = page.get_text("text").strip()
-                if page_text:
-                    cjk = sum(1 for c in page_text if '\u4e00' <= c <= '\u9fff'
-                              or '\u3400' <= c <= '\u4dbf')
-                    is_garbled = (cjk / len(page_text) < 0.05) and len(page_text) > 50
-                    if is_garbled:
-                        garbled_page_nums.append(page_num)
-                    else:
-                        txt_path = txt_dir / f"{file_stem}_p{page_num}.txt"
-                        txt_path.write_text(page_text, encoding="utf-8")
+            # 方法一：Raster 點陣圖
+            for img_info in page.get_images(full=True):
+                for r in page.get_image_rects(img_info[0]):
+                    if r.width > 50 and r.height > 50:
+                        candidates.append((r, 'RA'))
 
-            candidates = _detect_chart_regions(page)
+            # 方法二：Vector — 全部合併成一個大框（v1_3 核心）
+            paths = page.get_drawings()
+            if len(paths) >= MIN_PATHS:
+                drawing_rects = [
+                    p["rect"] for p in paths
+                    if p["rect"].width > 5 and p["rect"].height > 5
+                ]
+                if drawing_rects:
+                    combined = drawing_rects[0]
+                    for r in drawing_rects[1:]:
+                        combined |= r
+                    expanded = combined + (-EXPAND_PT, -EXPAND_PT, EXPAND_PT, EXPAND_PT)
+                    expanded &= page_rect
+                    if (expanded.width > MIN_DIM_PT and expanded.height > MIN_DIM_PT
+                            and expanded.width < page_rect.width * MAX_PAGE_RATIO):
+                        candidates.append((expanded, 'VC'))
 
             asset_idx = 0
-            for r, rtype in candidates:
+            for r, tcode in candidates:
                 area_pct = round(r.width * r.height / page_area * 100, 4)
                 if area_pct < MIN_AREA_PCT or area_pct > MAX_AREA_PCT:
                     continue
 
                 asset_idx += 1
-                type_code = "RA" if rtype == 'Raster' else "VC"
-                img_name  = f"{file_stem}_p{page_num}_{asset_idx}_{type_code}.jpg"
+                img_name  = f"{file_stem}_p{page_num}_{asset_idx}_{tcode}.png"
                 save_path = img_dir / img_name
 
                 pix = None
-                for scale in (RENDER_SCALE, 1):
+                for scale in (RENDER_SCALE, 2, 1):
                     try:
                         pix = page.get_pixmap(
                             matrix=fitz.Matrix(scale, scale),
@@ -316,7 +187,7 @@ def process_pdf(pdf_path: str, year: str) -> list[dict]:
                     asset_idx -= 1
                     continue
 
-                pix.save(str(save_path), jpg_quality=85)
+                pix.save(str(save_path))
                 pix = None
 
                 results.append({
@@ -326,22 +197,13 @@ def process_pdf(pdf_path: str, year: str) -> list[dict]:
                     "頁碼":           page_num,
                     "圖片編號":       asset_idx,
                     "圖片面積佔比(%)": area_pct,
-                    "類型":           rtype,
+                    "類型":           "Raster" if tcode == "RA" else "Vector",
                     "圖片檔名":       img_name,
                     "存檔路徑":       str(save_path),
                 })
 
         except Exception as e:
             log_queue.put(('warning', f'  跳過 {file_stem} 第 {page_num} 頁：{e}'))
-
-    # ── 亂碼頁記錄 ──
-    if SAVE_TXT and garbled_page_nums:
-        garbled_path = base_dir / "garbled_pages.txt"
-        garbled_path.write_text(
-            f"共 {len(garbled_page_nums)} 頁無法擷取文字（可能需要 OCR）：\n"
-            + ", ".join(str(p) for p in garbled_page_nums) + "\n",
-            encoding="utf-8"
-        )
 
     doc.close()
     return results
@@ -350,20 +212,14 @@ def process_pdf(pdf_path: str, year: str) -> list[dict]:
 # 萃取執行緒
 # ============================================================
 def _is_already_processed(pdf_path: str, year: str) -> bool:
-    """
-    判斷此 PDF 是否已處理過：
-    data/<year>/<file_stem>/images/ 資料夾存在且至少有一個 PNG 檔案。
-    只要刪除該資料夾即可觸發重新處理。
-    """
     file_stem = Path(pdf_path).stem
-    img_dir   = DATA_DIR / str(year) / file_stem / "images"
+    img_dir   = DATA_DIR / str(year) / file_stem / IMG_SUBDIR
     if not img_dir.is_dir():
         return False
     return any(img_dir.glob("*.png"))
 
 
 def run_extraction(years):
-    # 收集待處理 PDF
     tasks = []
     for year in years:
         pdf_folder = DATA_DIR / year
@@ -379,14 +235,14 @@ def run_extraction(years):
 
     ui_stats.update({'total': total, 'done': skipped, 'images': 0,
                      'skipped': skipped, 'error': 0})
-    log_queue.put(('info', f'共 {total} 個 PDF，已有輸出跳過 {skipped} 個，待處理 {len(pending)} 個（刪除 graph/ 子資料夾可重新處理）'))
+    log_queue.put(('info',
+        f'共 {total} 個 PDF，已有輸出跳過 {skipped} 個，待處理 {len(pending)} 個'))
 
     if not pending:
         log_queue.put(('info', '所有檔案皆已處理完成'))
         program_done.set()
         return
 
-    # 每個年份各自維護一份 data list（對應各自的 Excel）
     year_data: dict[str, list] = {}
     for y in set(yr for _, yr in pending):
         xls = year_excel(y)
@@ -399,7 +255,6 @@ def run_extraction(years):
             year_data[y] = []
 
     for i, (pdf_path, year) in enumerate(pending):
-        # 暫停檢查點：處理每個 PDF 之前先看有沒有暫停請求
         if pause_event.is_set():
             log_queue.put(('warning', '⏸ 已暫停，進度已儲存，可安全關閉視窗'))
             paused_event.set()
@@ -439,7 +294,7 @@ def create_startup_window():
     selected_years = []
 
     root = tk.Tk()
-    root.title(f"🌱 ESG 圖表萃取系統 v{__version__}")
+    root.title("🌱 ESG 圖表萃取系統 v1_3")
     root.geometry("480x380")
     root.configure(bg=APPLE_BG)
     root.resizable(False, False)
@@ -447,9 +302,9 @@ def create_startup_window():
 
     header = tk.Frame(root, bg=APPLE_BLUE, pady=14)
     header.pack(fill=tk.X)
-    tk.Label(header, text="ESG 圖表萃取系統", font=FONT_TITLE,
+    tk.Label(header, text="ESG 圖表萃取系統 v1_3", font=FONT_TITLE,
              fg='white', bg=APPLE_BLUE).pack()
-    tk.Label(header, text="永續報告書圖表自動擷取 · CNN 前處理", font=FONT_LABEL,
+    tk.Label(header, text="單一 Union + 80pt 擴張（無聚類、無遮罩）", font=FONT_LABEL,
              fg='#a8d4ff', bg=APPLE_BLUE).pack(pady=(2, 0))
 
     if not DATA_DIR.is_dir():
@@ -504,11 +359,6 @@ def create_startup_window():
               activebackground=APPLE_BORDER, relief='flat', padx=22, pady=9,
               cursor='hand2',
               command=lambda: subprocess.Popen(['open', str(DATA_DIR)])).pack(side=tk.LEFT, padx=8)
-    tk.Button(btn_frame, text="📊  查看主控台",
-              font=FONT_MAIN, bg=APPLE_CARD, fg=APPLE_TEXT,
-              activebackground=APPLE_BORDER, relief='flat', padx=22, pady=9,
-              cursor='hand2',
-              command=_open_dashboard).pack(side=tk.LEFT, padx=8)
 
     root.mainloop()
     return selected_years
@@ -519,7 +369,7 @@ def create_startup_window():
 def create_progress_window(years):
     year_label = '、'.join(str(y) for y in years)
     root = tk.Tk()
-    root.title(f"🌱 ESG 圖表萃取系統 v{__version__} | {year_label} 年")
+    root.title(f"🌱 ESG 圖表萃取系統 v1_3 | {year_label} 年")
     root.geometry("1000x700")
     root.configure(bg=APPLE_BG)
     root.resizable(True, True)
@@ -529,9 +379,8 @@ def create_progress_window(years):
         if program_done.is_set():
             root.destroy()
         elif paused_event.is_set():
-            # 暫停中：進度已儲存，可以安全關閉
             program_done.set()
-            pause_event.clear()   # 喚醒執行緒讓它讀到 program_done 後自行結束
+            pause_event.clear()
             root.destroy()
         else:
             messagebox.showinfo(
@@ -545,7 +394,7 @@ def create_progress_window(years):
     # --- Header ---
     header = tk.Frame(root, bg=APPLE_BLUE, pady=12)
     header.pack(fill=tk.X)
-    tk.Label(header, text="ESG 圖表萃取系統",
+    tk.Label(header, text="ESG 圖表萃取系統 v1_3",
              font=FONT_TITLE, fg='white', bg=APPLE_BLUE).pack(side=tk.LEFT, padx=20)
     status_dot = tk.Label(header, text='● 初始化', font=FONT_MAIN,
                           fg='#ffdd57', bg=APPLE_BLUE)
@@ -625,11 +474,6 @@ def create_progress_window(years):
               activebackground=APPLE_BORDER, relief='flat', padx=16, pady=7,
               cursor='hand2', bd=0,
               command=lambda: subprocess.Popen(['open', str(DATA_DIR)])).pack(side=tk.LEFT, padx=8)
-    tk.Button(bottom, text="📊  查看主控台",
-              font=FONT_MAIN, bg=APPLE_CARD, fg=APPLE_TEXT,
-              activebackground=APPLE_BORDER, relief='flat', padx=16, pady=7,
-              cursor='hand2', bd=0,
-              command=_open_dashboard).pack(side=tk.LEFT, padx=8)
     time_label = tk.Label(bottom, text='', font=FONT_LABEL,
                           fg=APPLE_GREY, bg=APPLE_BG)
     time_label.pack(side=tk.RIGHT)

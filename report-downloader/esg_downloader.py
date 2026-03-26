@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import sys
+import platform
 import time
 import random
 import threading
@@ -29,11 +30,53 @@ STANDARD_PATTERN = re.compile(r'^\d{4}_\d+_.+\.pdf$')
 _BASE_DIR        = Path(__file__).parent.absolute()
 _DATA_DIR        = _BASE_DIR.parent / "data"    # 統一輸出根目錄（與 esg_pdf_cuter 共用）
 logs_folder      = str(_BASE_DIR / "logs")
-DASHBOARD_PY     = _BASE_DIR.parent / "esg-dashboard" / "dashboard.py"
+DASHBOARD_PY     = _BASE_DIR.parent / "dashboard" / "esg-dashboard.py"
 
 def _open_dashboard():
     if DASHBOARD_PY.exists():
         subprocess.Popen([sys.executable, str(DASHBOARD_PY)])
+
+def _open_folder(path: str) -> None:
+    if platform.system() == 'Windows':
+        os.startfile(path)
+    elif platform.system() == 'Darwin':
+        subprocess.Popen(['open', path])
+    else:
+        subprocess.Popen(['xdg-open', path])
+
+def _make_btn(parent, sym: str, label: str, cmd, pady: int = 8) -> tk.Frame:
+    f  = tk.Frame(parent, bg=APPLE_CARD, cursor='hand2',
+                  highlightthickness=1, highlightbackground=APPLE_BORDER)
+    sl = tk.Label(f, text=sym,   font=FONT_MAIN, fg=APPLE_BLUE,
+                  bg=APPLE_CARD, padx=10, pady=pady)
+    tl = tk.Label(f, text=label, font=FONT_MAIN, fg=APPLE_TEXT,
+                  bg=APPLE_CARD, padx=4,  pady=pady)
+    sl.pack(side=tk.LEFT)
+    tl.pack(side=tk.LEFT, padx=(0, 12))
+    def _enter(_): [w.config(bg='#e8e8ed') for w in (f, sl, tl)]
+    def _leave(_): [w.config(bg=APPLE_CARD) for w in (f, sl, tl)]
+    for w in (f, sl, tl):
+        w.bind('<Enter>',    _enter)
+        w.bind('<Leave>',    _leave)
+        w.bind('<Button-1>', lambda _, c=cmd: c())
+    return f
+
+def _make_btn_sv(parent, sym_var, text_var, cmd, pady: int = 8) -> tk.Frame:
+    f  = tk.Frame(parent, bg=APPLE_CARD, cursor='hand2',
+                  highlightthickness=1, highlightbackground=APPLE_BORDER)
+    sl = tk.Label(f, textvariable=sym_var,  font=FONT_MAIN, fg=APPLE_BLUE,
+                  bg=APPLE_CARD, padx=10, pady=pady)
+    tl = tk.Label(f, textvariable=text_var, font=FONT_MAIN, fg=APPLE_TEXT,
+                  bg=APPLE_CARD, padx=4,  pady=pady)
+    sl.pack(side=tk.LEFT)
+    tl.pack(side=tk.LEFT, padx=(0, 12))
+    def _enter(_): [w.config(bg='#e8e8ed') for w in (f, sl, tl)]
+    def _leave(_): [w.config(bg=APPLE_CARD) for w in (f, sl, tl)]
+    for w in (f, sl, tl):
+        w.bind('<Enter>',    _enter)
+        w.bind('<Leave>',    _leave)
+        w.bind('<Button-1>', lambda _, c=cmd: c())
+    return f
 os.makedirs(logs_folder, exist_ok=True)
 os.makedirs(str(_DATA_DIR), exist_ok=True)
 
@@ -355,21 +398,9 @@ def create_startup_window():
 
     btn_frame = tk.Frame(root, bg=APPLE_BG, pady=15)
     btn_frame.pack()
-    tk.Button(btn_frame, text="▶  開始下載",
-              font=FONT_MAIN, bg=APPLE_BLUE, fg='white',
-              activebackground='#0051a8', activeforeground='white',
-              relief='flat', padx=22, pady=9, cursor='hand2',
-              command=on_start).pack(side=tk.LEFT, padx=8)
-    tk.Button(btn_frame, text="📁  開啟輸出資料夾",
-              font=FONT_MAIN, bg=APPLE_CARD, fg=APPLE_TEXT,
-              activebackground=APPLE_BORDER, relief='flat', padx=22, pady=9,
-              cursor='hand2',
-              command=lambda: subprocess.Popen(['open', str(_DATA_DIR)])).pack(side=tk.LEFT, padx=8)
-    tk.Button(btn_frame, text="📊  查看主控台",
-              font=FONT_MAIN, bg=APPLE_CARD, fg=APPLE_TEXT,
-              activebackground=APPLE_BORDER, relief='flat', padx=22, pady=9,
-              cursor='hand2',
-              command=_open_dashboard).pack(side=tk.LEFT, padx=8)
+    _make_btn(btn_frame, '▶', '開始下載',        on_start).pack(side=tk.LEFT, padx=6)
+    _make_btn(btn_frame, '📁', '開啟輸出資料夾', lambda: _open_folder(str(_DATA_DIR))).pack(side=tk.LEFT, padx=6)
+    _make_btn(btn_frame, '📊', '查看主控台',     _open_dashboard).pack(side=tk.LEFT, padx=6)
 
     root.mainloop()
 
@@ -496,24 +527,12 @@ def create_progress_window():
 
     bottom = tk.Frame(root, bg=APPLE_BG, pady=8)
     bottom.pack(fill=tk.X, padx=15)
-    pause_btn_text = tk.StringVar(value='⏸  暫停（下載完成後生效）')
-    tk.Button(bottom, textvariable=pause_btn_text,
-              font=FONT_MAIN, bg=APPLE_BLUE, fg='white',
-              activebackground='#0051a8', activeforeground='white',
-              relief='flat', padx=16, pady=7, cursor='hand2', bd=0,
-              command=lambda: toggle_pause(pause_btn_text)).pack(side=tk.LEFT)
-
-    tk.Button(bottom, text='📁  開啟輸出資料夾',
-              font=FONT_MAIN, bg=APPLE_CARD, fg=APPLE_TEXT,
-              activebackground=APPLE_BORDER,
-              relief='flat', padx=16, pady=7, cursor='hand2', bd=0,
-              command=lambda: subprocess.Popen(['open', str(_DATA_DIR)])
-              ).pack(side=tk.LEFT, padx=8)
-    tk.Button(bottom, text='📊  查看主控台',
-              font=FONT_MAIN, bg=APPLE_CARD, fg=APPLE_TEXT,
-              activebackground=APPLE_BORDER,
-              relief='flat', padx=16, pady=7, cursor='hand2', bd=0,
-              command=_open_dashboard).pack(side=tk.LEFT, padx=8)
+    pause_sym_var  = tk.StringVar(value='⏸')
+    pause_text_var = tk.StringVar(value='暫停（下載完成後生效）')
+    _make_btn_sv(bottom, pause_sym_var, pause_text_var,
+                 lambda: toggle_pause(pause_sym_var, pause_text_var)).pack(side=tk.LEFT)
+    _make_btn(bottom, '📁', '開啟輸出資料夾', lambda: _open_folder(str(_DATA_DIR))).pack(side=tk.LEFT, padx=8)
+    _make_btn(bottom, '📊', '查看主控台',     _open_dashboard).pack(side=tk.LEFT, padx=8)
 
     time_label = tk.Label(bottom, text='', font=FONT_LABEL,
                           fg=APPLE_GREY, bg=APPLE_BG)
@@ -533,9 +552,7 @@ def create_progress_window():
 
         while not ui_cmd_queue.empty():
             cmd, val = ui_cmd_queue.get()
-            if cmd == 'pause_btn':
-                pause_btn_text.set(val)
-            elif cmd == 'status_dot':
+            if cmd == 'status_dot':
                 status_dot.config(text=val[0], fg=val[1])
 
         p   = ui_stats['processed']
@@ -552,15 +569,17 @@ def create_progress_window():
     root.mainloop()
 
 
-def toggle_pause(btn_var):
+def toggle_pause(sym_var, text_var):
     if pause_event.is_set():
         pause_event.clear()
-        btn_var.set('⏸  暫停（下載完成後生效）')
+        sym_var.set('⏸')
+        text_var.set('暫停（下載完成後生效）')
         ui_cmd_queue.put(('status_dot', ('● 執行中', '#34c759')))
     else:
         if messagebox.askyesno("確認暫停", "確定要暫停嗎？\n程式將在當前公司處理完成後暫停。"):
             pause_event.set()
-            btn_var.set('▶  繼續執行')
+            sym_var.set('▶')
+            text_var.set('繼續執行')
             # 狀態點不在此更新，等 check_pause_point 真正暫停後才顯示
 
 

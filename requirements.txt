@@ -1,0 +1,6 @@
+PyMuPDF==1.26.5
+pandas==2.3.3
+pillow==11.3.0
+selenium==4.36.0
+pyobjc-core==12.0 ; sys_platform == "darwin"
+pyobjc-framework-Cocoa==12.0 ; sys_platform == "darwin"
