@@ -953,22 +953,21 @@ def wait_for_download(year, stock_id, company_name, download_folder):
     download_started = False
 
     def rename_and_return(filename):
-        old_path = os.path.join(download_folder, filename)
-        clean    = re.sub(r'[<>:"/\\|?*]', '', company_name).strip() or stock_id
-        desired  = f"{year}_{stock_id}_{clean}.pdf"
-        if filename != desired:
-            new_path = os.path.join(download_folder, desired)
-            if os.path.exists(new_path):
-                os.remove(new_path)
-            try:
-                os.rename(old_path, new_path)
-                log(f"✅ 下載完成並重新命名: {desired}")
-                return desired
-            except Exception as e:
-                log(f"✅ 下載完成: {filename} (改名失敗: {e})")
-                return filename
-        log(f"✅ 下載完成: {filename}")
-        return filename
+        old_path     = os.path.join(download_folder, filename)
+        clean        = re.sub(r'[<>:"/\\|?*]', '', company_name).strip() or stock_id
+        desired      = f"{year}_{stock_id}_{clean}.pdf"
+        company_dir  = os.path.join(download_folder, f"{year}_{stock_id}_{clean}")
+        os.makedirs(company_dir, exist_ok=True)
+        new_path     = os.path.join(company_dir, desired)
+        if os.path.exists(new_path):
+            os.remove(new_path)
+        try:
+            os.rename(old_path, new_path)
+            log(f"✅ 下載完成: {desired}")
+            return desired
+        except Exception as e:
+            log(f"✅ 下載完成: {filename} (移至子資料夾失敗: {e})")
+            return filename
 
     i             = 0
     stall_seconds = 0   # 大小連續未增長的秒數
