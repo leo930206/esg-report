@@ -26,7 +26,7 @@ __version__ = "2.7"
 # v2.7 — 新增方法三：Panel 偵測（有色填色/邊框的中型矩形作為圖表框），
 #         解決雙頁跨版模板導致向量聚類失敗的問題
 
-DASHBOARD_PY = Path(__file__).parent.parent / "dashboard" / "esg-dashboard.py"
+DASHBOARD_PY = Path(__file__).parent.parent / "dashboard" / "esg-dashboard.py"  # 同在 tools/
 
 def _open_dashboard():
     if DASHBOARD_PY.exists():
@@ -81,7 +81,7 @@ def _make_btn_sv(parent, sym_var, text_var, cmd, pady: int = 8) -> tk.Frame:
 # 路徑設定
 # ============================================================
 BASE_DIR = Path(__file__).parent.absolute()
-DATA_DIR = BASE_DIR.parent / "data"          # 統一輸出根目錄
+DATA_DIR = BASE_DIR.parent.parent / "data"   # 統一輸出根目錄
 DATA_DIR.mkdir(exist_ok=True)
 
 def year_dir(year: str) -> Path:
@@ -105,23 +105,36 @@ def available_years():
 # App Icon（Dock / 視窗）
 # ============================================================
 def set_app_icon(root: tk.Tk) -> None:
-    """載入 ESG.png 設定 Dock 圖示與 tkinter 視窗圖示。"""
-    icon_path = Path(__file__).parent.parent / "ESG.png"
+    """載入 ESG.png 設定 Dock／工作列圖示與 tkinter 視窗圖示。"""
+    icon_path = Path(__file__).parent.parent.parent / "ESG.png"
     if not icon_path.exists():
         return
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('ESG.Report')
+        except Exception:
+            pass
+    else:
+        try:
+            from AppKit import NSApplication, NSImage
+            ns_img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
+            if ns_img:
+                NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
+        except Exception:
+            pass
     try:
-        from AppKit import NSApplication, NSImage
-        ns_img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
-        if ns_img:
-            NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
-    except Exception:
-        pass
-    try:
-        photo = tk.PhotoImage(file=str(icon_path))
+        from PIL import Image as PILImage, ImageTk
+        photo = ImageTk.PhotoImage(PILImage.open(str(icon_path)))
         root.iconphoto(True, photo)
         root._icon_ref = photo
     except Exception:
-        pass
+        try:
+            photo = tk.PhotoImage(file=str(icon_path))
+            root.iconphoto(True, photo)
+            root._icon_ref = photo
+        except Exception:
+            pass
 
 
 # ============================================================
@@ -538,7 +551,7 @@ def create_startup_window():
     selected_years = []
 
     root = tk.Tk()
-    root.title(f"🌱 ESG 圖表萃取系統 v{__version__}")
+    root.title(f"ESG 圖表萃取系統")
     root.geometry("480x380")
     root.configure(bg=APPLE_BG)
     root.resizable(False, False)
@@ -693,16 +706,21 @@ def create_progress_window(years):
 
     pause_sym_var  = tk.StringVar(value='⏸')
     pause_text_var = tk.StringVar(value='暫停（目前 PDF 完成後生效）')
+    _pause_pending = [False]   # 已按暫停但執行緒尚未真正停下
 
     def toggle_pause():
         if pause_event.is_set():
+            # 繼續執行
             pause_event.clear()
+            _pause_pending[0] = False
             pause_sym_var.set('⏸')
             pause_text_var.set('暫停（目前 PDF 完成後生效）')
         else:
+            # 請求暫停：先顯示「等待中」，等執行緒真正停下才更新
             pause_event.set()
-            pause_sym_var.set('▶')
-            pause_text_var.set('繼續執行')
+            _pause_pending[0] = True
+            pause_sym_var.set('⏳')
+            pause_text_var.set('暫停中（等待此 PDF 完成…）')
 
     _make_btn_sv(bottom, pause_sym_var, pause_text_var, toggle_pause).pack(side=tk.LEFT)
     _make_btn(bottom, '📁', '開啟輸出資料夾', lambda: _open_folder(str(DATA_DIR))).pack(side=tk.LEFT, padx=8)
@@ -738,6 +756,13 @@ def create_progress_window(years):
             status_dot.config(text='■ 已完成', fg='#8e8e93')
         elif paused_event.is_set():
             status_dot.config(text='⏸ 已暫停', fg='#ff9f0a')
+            if _pause_pending[0]:
+                # 執行緒剛剛真正停下來：更新按鈕、跳通知
+                _pause_pending[0] = False
+                pause_sym_var.set('▶')
+                pause_text_var.set('繼續執行')
+                root.bell()
+                messagebox.showinfo('已暫停', '目前 PDF 已處理完畢，程式已暫停。\n進度已儲存，可以安全關閉視窗。')
         elif done > ui_stats['skipped']:
             status_dot.config(text='● 執行中', fg='#34c759')
 

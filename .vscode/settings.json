@@ -1,3 +1,11 @@
 {
-    "git.ignoreLimitWarning": true
+    "git.ignoreLimitWarning": true,
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv",
+    "code-runner.runInTerminal": true,
+    "code-runner.enableAppInsights": false,
+    "code-runner.ignoreSelection": true,
+    "code-runner.executorMap": {
+        "python": "python -u $fullFileName",
+        "python3": "python -u $fullFileName"
+    }
 }

@@ -8,10 +8,11 @@
 
 ```
 esg-report/
-├── report-downloader/         ← 爬蟲：自動下載永續報告書 PDF
-├── pdf-cuter/                 ← 萃取：切割 PDF 圖表並輸出文字
-├── chart-counter/             ← 計數：CLIP zero-shot 統計各公司圖表數量
-├── dashboard/                 ← 主控台：查看下載與萃取進度
+├── tools/
+│   ├── report-downloader/     ← 爬蟲：自動下載永續報告書 PDF
+│   ├── pdf-cuter/             ← 萃取：切割 PDF 圖表並輸出文字
+│   ├── chart-counter/         ← 計數：CLIP zero-shot 統計各公司圖表數量
+│   └── dashboard/             ← 主控台：查看下載與萃取進度
 ├── data/                      ← 所有輸出資料（gitignore，不進版控）
 │   ├── 2015/
 │   │   ├── ESG_Download_Progress_2015.xlsx
@@ -19,9 +20,11 @@ esg-report/
 │   │   └── 2015_1101_台泥/
 │   │       ├── 2015_1101_台泥.pdf
 │   │       ├── images/        ← 萃取出的圖表 JPEG
+│   │       ├── charts/        ← 判定為圖表的圖片（chart-counter 輸出）
 │   │       └── texts/         ← 每頁文字 TXT
 │   ├── 2016/ ... 2024/
 │   └── chart_statistics.xlsx  ← 圖表計數結果（chart-counter 輸出）
+├── ESG.png
 └── requirements.txt
 ```
 
@@ -60,7 +63,7 @@ pip install -r requirements.txt
 ### Step 1：下載 PDF
 
 ```bash
-python report-downloader/esg_downloader.py
+python tools/report-downloader/esg_downloader.py
 ```
 
 - 選擇年度（可多選），點擊「▶ 開始下載」
@@ -70,7 +73,7 @@ python report-downloader/esg_downloader.py
 ### Step 2：萃取圖表
 
 ```bash
-python pdf-cuter/esg_pdf_cuter.py
+python tools/pdf-cuter/esg_pdf_cuter.py
 ```
 
 - 選擇年度，點擊「▶ 開始萃取」
@@ -81,7 +84,7 @@ python pdf-cuter/esg_pdf_cuter.py
 ### Step 3：統計圖表數量
 
 ```bash
-python chart-counter/chart_counter.py
+python tools/chart-counter/chart_counter.py
 ```
 
 - 選擇年度，調整 CLIP 機率門檻（預設 0.55）
@@ -92,7 +95,7 @@ python chart-counter/chart_counter.py
 ### Step 4：查看主控台
 
 ```bash
-python dashboard/esg-dashboard.py
+python tools/dashboard/esg-dashboard.py
 ```
 
 或在下載／萃取視窗點擊「🖥 查看主控台」。
@@ -168,7 +171,7 @@ CLIP 比較兩個 prompt 的相似度：
 
 ## 注意事項
 
-- `tw_listed.xlsx`（上市公司清單）需放在 `report-downloader/` 資料夾內
+- `tw_listed.xlsx`（上市公司清單）需放在 `tools/report-downloader/` 資料夾內
 - `data/` 內的 PDF、images/、texts/ 已加入 `.gitignore`，不進版控
 - 進度 Excel（`ESG_Download_Progress_*.xlsx`、`ESG_Extract_Results_*.xlsx`）會進版控
 - 執行日誌儲存於各程式的 `logs/` 資料夾

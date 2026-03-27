@@ -4,14 +4,12 @@ data/**/*.pdf
 # 萃取輸出（圖片、文字，檔案多且大）
 data/**/images/
 data/**/images_v1_3/
+data/**/charts/
 data/**/texts/
 data/**/garbled_pages.txt
 
 # 測試用
-esg-pdf-cuter/clean_output.py
-esg-pdf-cuter/cut_pdf_v1_3.py
-esg-pdf-cuter/esg_pdf_cuter_v1_3.py
-esg-pdf-cuter/run_v1_3.py
+tools/pdf-cuter/clean_output.py
 
 # Python venv
 .venv/
@@ -24,6 +22,7 @@ esg-pdf-cuter/run_v1_3.py
 tmp_*.xlsx
 *.tmp
 *.crdownload
+tempCodeRunnerFile.py
 
 # Python cache
 __pycache__/

@@ -4,6 +4,7 @@ ESG 研究主控台 — 一覽下載進度與圖表萃取狀態。
 可與 esg_downloader.py / esg_pdf_cuter.py 同時執行，自動偵測資料更新。
 """
 import os
+import sys
 import threading
 import subprocess
 import tkinter as tk
@@ -16,7 +17,7 @@ import pandas as pd
 # ============================================================
 # 路徑設定
 # ============================================================
-BASE_DIR = Path(__file__).parent.parent.absolute()
+BASE_DIR = Path(__file__).parent.parent.parent.absolute()
 DATA_DIR = BASE_DIR / "data"
 
 DOWNLOAD_STATUSES  = ['成功', '未找到中文版報告', '已確認無報告', '下載失敗']
@@ -45,23 +46,36 @@ FONT_NUM    = ('Helvetica Neue', 11, 'bold')
 # App Icon
 # ============================================================
 def set_app_icon(root: tk.Tk) -> None:
-    """載入 ESG.png 設定 Dock 圖示與 tkinter 視窗圖示。"""
-    icon_path = Path(__file__).parent.parent / "ESG.png"
+    """載入 ESG.png 設定 Dock／工作列圖示與 tkinter 視窗圖示。"""
+    icon_path = Path(__file__).parent.parent.parent / "ESG.png"
     if not icon_path.exists():
         return
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('ESG.Report')
+        except Exception:
+            pass
+    else:
+        try:
+            from AppKit import NSApplication, NSImage
+            ns_img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
+            if ns_img:
+                NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
+        except Exception:
+            pass
     try:
-        from AppKit import NSApplication, NSImage
-        ns_img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
-        if ns_img:
-            NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
-    except Exception:
-        pass
-    try:
-        photo = tk.PhotoImage(file=str(icon_path))
+        from PIL import Image as PILImage, ImageTk
+        photo = ImageTk.PhotoImage(PILImage.open(str(icon_path)))
         root.iconphoto(True, photo)
         root._icon_ref = photo
     except Exception:
-        pass
+        try:
+            photo = tk.PhotoImage(file=str(icon_path))
+            root.iconphoto(True, photo)
+            root._icon_ref = photo
+        except Exception:
+            pass
 
 # ============================================================
 # 資料讀取（效能優化：os.scandir + 淺層 glob）
@@ -297,7 +311,7 @@ class DetailWindow:
 class Dashboard:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("📊 ESG 研究主控台")
+        self.root.title("ESG 研究主控台")
         self.root.geometry("980x720")
         self.root.configure(bg=APPLE_BG)
         self.root.resizable(True, True)

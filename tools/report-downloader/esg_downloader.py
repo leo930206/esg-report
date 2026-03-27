@@ -29,9 +29,9 @@ from pathlib import Path
 HEADLESS         = True
 STANDARD_PATTERN = re.compile(r'^\d{4}_\d+_.+\.pdf$')
 _BASE_DIR        = Path(__file__).parent.absolute()
-_DATA_DIR        = _BASE_DIR.parent / "data"    # 統一輸出根目錄（與 esg_pdf_cuter 共用）
+_DATA_DIR        = _BASE_DIR.parent.parent / "data"    # 統一輸出根目錄（與 esg_pdf_cuter 共用）
 logs_folder      = str(_BASE_DIR / "logs")
-DASHBOARD_PY     = _BASE_DIR.parent / "dashboard" / "esg-dashboard.py"
+DASHBOARD_PY     = _BASE_DIR.parent / "dashboard" / "esg-dashboard.py"  # 同在 tools/
 
 def _open_dashboard():
     if DASHBOARD_PY.exists():
@@ -117,23 +117,36 @@ ui_stats = {
 # App Icon（Dock / 視窗）
 # ============================================================
 def set_app_icon(root: tk.Tk) -> None:
-    """載入 ESG.png 設定 Dock 圖示與 tkinter 視窗圖示。"""
-    icon_path = Path(__file__).parent.parent / "ESG.png"
+    """載入 ESG.png 設定 Dock／工作列圖示與 tkinter 視窗圖示。"""
+    icon_path = Path(__file__).parent.parent.parent / "ESG.png"
     if not icon_path.exists():
         return
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('ESG.Report')
+        except Exception:
+            pass
+    else:
+        try:
+            from AppKit import NSApplication, NSImage
+            ns_img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
+            if ns_img:
+                NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
+        except Exception:
+            pass
     try:
-        from AppKit import NSApplication, NSImage
-        ns_img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
-        if ns_img:
-            NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
-    except Exception:
-        pass
-    try:
-        photo = tk.PhotoImage(file=str(icon_path))
+        from PIL import Image as PILImage, ImageTk
+        photo = ImageTk.PhotoImage(PILImage.open(str(icon_path)))
         root.iconphoto(True, photo)
         root._icon_ref = photo
     except Exception:
-        pass
+        try:
+            photo = tk.PhotoImage(file=str(icon_path))
+            root.iconphoto(True, photo)
+            root._icon_ref = photo
+        except Exception:
+            pass
 
 
 # ============================================================
@@ -335,7 +348,7 @@ def create_view_window(parent):
 # ============================================================
 def create_startup_window():
     root = tk.Tk()
-    root.title("🌱 ESG 報告下載系統")
+    root.title("ESG 報告下載系統")
     root.geometry("480x380")
     root.configure(bg=APPLE_BG)
     root.resizable(False, False)

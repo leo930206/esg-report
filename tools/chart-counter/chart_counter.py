@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 ESG 圖表計數器 v1.1
 使用 CLIP zero-shot 分類，統計各公司 ESG 報告中的圖表數量。
@@ -7,6 +6,8 @@ ESG 圖表計數器 v1.1
 
 import os
 import platform
+import shutil
+import sys
 import subprocess
 import threading
 import queue
@@ -20,7 +21,7 @@ from datetime import datetime
 __version__ = "1.1"
 
 # ── 路徑 ─────────────────────────────────────────────────────────────
-DATA_DIR   = Path(__file__).parent.parent / "data"
+DATA_DIR   = Path(__file__).parent.parent.parent / "data"
 OUTPUT_XLS = DATA_DIR / "chart_statistics.xlsx"
 
 # ── CLIP 設定 ─────────────────────────────────────────────────────────
@@ -70,23 +71,36 @@ _clip_processor = None
 
 # ── 工具函式 ──────────────────────────────────────────────────────────
 def set_app_icon(root: tk.Tk) -> None:
-    """載入 ESG.png 設定 Dock 圖示與 tkinter 視窗圖示。"""
-    icon_path = Path(__file__).parent.parent / "ESG.png"
+    """載入 ESG.png 設定 Dock／工作列圖示與 tkinter 視窗圖示。"""
+    icon_path = Path(__file__).parent.parent.parent / "ESG.png"
     if not icon_path.exists():
         return
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('ESG.Report')
+        except Exception:
+            pass
+    else:
+        try:
+            from AppKit import NSApplication, NSImage
+            ns_img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
+            if ns_img:
+                NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
+        except Exception:
+            pass
     try:
-        from AppKit import NSApplication, NSImage
-        ns_img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
-        if ns_img:
-            NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
-    except Exception:
-        pass
-    try:
-        photo = tk.PhotoImage(file=str(icon_path))
+        from PIL import Image as PILImage, ImageTk
+        photo = ImageTk.PhotoImage(PILImage.open(str(icon_path)))
         root.iconphoto(True, photo)
         root._icon_ref = photo
     except Exception:
-        pass
+        try:
+            photo = tk.PhotoImage(file=str(icon_path))
+            root.iconphoto(True, photo)
+            root._icon_ref = photo
+        except Exception:
+            pass
 
 
 def _log(level: str, msg: str) -> None:
@@ -198,21 +212,25 @@ def run_classification(years: list[str], threshold: float) -> None:
             images_dir = company_dir / 'images'
             if not images_dir.is_dir():
                 continue
-            jpg_files = sorted(images_dir.glob('*.jpg'))
+            jpg_files = sorted(p for p in images_dir.glob('*.jpg') if not p.name.startswith('._'))
             if not jpg_files:
                 continue
 
             sid, display = _company_parts(company_dir.name)
             chart_count  = 0
 
+            charts_dir = company_dir / 'charts'
+
             for i in range(0, len(jpg_files), BATCH_SIZE):
                 if stop_event.is_set():
                     break
                 batch_paths = jpg_files[i:i + BATCH_SIZE]
                 images_pil: list = []
+                loaded_paths: list = []
                 for p in batch_paths:
                     try:
                         images_pil.append(Image.open(p).convert('RGB'))
+                        loaded_paths.append(p)
                         ui_stats['total'] += 1
                     except Exception as e:
                         _log('warning', f'無法讀取：{p.name}（{e}）')
@@ -223,10 +241,12 @@ def run_classification(years: list[str], threshold: float) -> None:
 
                 try:
                     flags = _classify_batch(images_pil, model, processor, device, threshold)
-                    for is_chart in flags:
+                    for path, is_chart in zip(loaded_paths, flags):
                         if is_chart:
                             chart_count       += 1
                             ui_stats['chart'] += 1
+                            charts_dir.mkdir(exist_ok=True)
+                            shutil.copy2(path, charts_dir / path.name)
                         else:
                             ui_stats['non_chart'] += 1
                 except Exception as e:
@@ -311,7 +331,7 @@ def _save_excel() -> None:
 class App:
     def __init__(self) -> None:
         self.root = tk.Tk()
-        self.root.title('ESG 圖表計數器')
+        self.root.title('ESG 圖表數量計算器')
         self.root.configure(bg=APPLE_BG)
         self.root.resizable(False, False)
         self.root.protocol('WM_DELETE_WINDOW', self._on_close)
