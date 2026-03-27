@@ -700,10 +700,9 @@ def create_progress_window(years):
             pause_sym_var.set('⏸')
             pause_text_var.set('暫停（目前 PDF 完成後生效）')
         else:
-            if messagebox.askyesno("確認暫停", "確定要暫停嗎？\n目前這份 PDF 處理完後會暫停，進度自動儲存。"):
-                pause_event.set()
-                pause_sym_var.set('▶')
-                pause_text_var.set('繼續執行')
+            pause_event.set()
+            pause_sym_var.set('▶')
+            pause_text_var.set('繼續執行')
 
     _make_btn_sv(bottom, pause_sym_var, pause_text_var, toggle_pause).pack(side=tk.LEFT)
     _make_btn(bottom, '📁', '開啟輸出資料夾', lambda: _open_folder(str(DATA_DIR))).pack(side=tk.LEFT, padx=8)
