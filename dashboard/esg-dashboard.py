@@ -44,26 +44,20 @@ FONT_NUM    = ('Helvetica Neue', 11, 'bold')
 # ============================================================
 # App Icon
 # ============================================================
-def set_app_icon(root: tk.Tk, emoji: str = "📊") -> None:
+def set_app_icon(root: tk.Tk) -> None:
+    """載入 ESG.png 設定 Dock 圖示與 tkinter 視窗圖示。"""
+    icon_path = Path(__file__).parent.parent / "ESG.png"
+    if not icon_path.exists():
+        return
     try:
-        from AppKit import NSApplication, NSImage, NSAttributedString, NSFont
-        from Foundation import NSMakeSize
-        size   = 256
-        ns_img = NSImage.alloc().initWithSize_(NSMakeSize(size, size))
-        ns_img.lockFocus()
-        attrs  = {"NSFont": NSFont.systemFontOfSize_(200)}
-        s      = NSAttributedString.alloc().initWithString_attributes_(emoji, attrs)
-        s.drawAtPoint_((20, 20))
-        ns_img.unlockFocus()
-        NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
-        import base64
-        from io import BytesIO
-        from PIL import Image as PILImage
-        tiff  = ns_img.TIFFRepresentation()
-        pil   = PILImage.open(BytesIO(bytes(tiff)))
-        buf   = BytesIO()
-        pil.save(buf, format="PNG")
-        photo = tk.PhotoImage(data=base64.b64encode(buf.getvalue()).decode())
+        from AppKit import NSApplication, NSImage
+        ns_img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
+        if ns_img:
+            NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
+    except Exception:
+        pass
+    try:
+        photo = tk.PhotoImage(file=str(icon_path))
         root.iconphoto(True, photo)
         root._icon_ref = photo
     except Exception:

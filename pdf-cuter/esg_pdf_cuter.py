@@ -14,13 +14,17 @@ from datetime import datetime
 import fitz           # PyMuPDF
 import pandas as pd
 
-__version__ = "2.5"
+__version__ = "2.7"
 # v2.0 — 初版 GUI + Union-Find 聚類 + EXPAND_PT=20 + 文字遮罩
 # v2.1 — 加入 A/B/C/D 過濾（QR、全頁圖、裝飾線、路徑數門檻）
 # v2.2 — 移除文字遮罩/文字擴張，EXPAND_PT=20→50
 # v2.3 — CLUSTER_GAP_PT=80→40，避免同頁兩張圖被合併成一個框
 # v2.4 — 恢復 texts/ 全頁文字存檔輸出
 # v2.5 — 圖片改 JPEG q85 + RENDER_SCALE=2；亂碼頁記錄至 garbled_pages.txt
+# v2.6 — 修正寬圖被過度過濾：MAX_PAGE_RATIO 改用 cluster 原始寬度判斷；
+#         RASTER_MAX_AREA_PCT 60→80；MIN_CLUSTER_PATHS 5→3
+# v2.7 — 新增方法三：Panel 偵測（有色填色/邊框的中型矩形作為圖表框），
+#         解決雙頁跨版模板導致向量聚類失敗的問題
 
 DASHBOARD_PY = Path(__file__).parent.parent / "dashboard" / "esg-dashboard.py"
 
@@ -100,35 +104,22 @@ def available_years():
 # ============================================================
 # App Icon（Dock / 視窗）
 # ============================================================
-def set_app_icon(root: tk.Tk, emoji: str = "🌱") -> None:
-    """macOS：用 AppKit NSAttributedString 渲染 emoji → 設定 Dock 圖示。"""
+def set_app_icon(root: tk.Tk) -> None:
+    """載入 ESG.png 設定 Dock 圖示與 tkinter 視窗圖示。"""
+    icon_path = Path(__file__).parent.parent / "ESG.png"
+    if not icon_path.exists():
+        return
     try:
-        from AppKit import NSApplication, NSImage, NSAttributedString, NSFont
-        from Foundation import NSMakeSize
-
-        size   = 256
-        ns_img = NSImage.alloc().initWithSize_(NSMakeSize(size, size))
-        ns_img.lockFocus()
-        attrs  = {"NSFont": NSFont.systemFontOfSize_(200)}
-        s      = NSAttributedString.alloc().initWithString_attributes_(emoji, attrs)
-        s.drawAtPoint_((20, 20))
-        ns_img.unlockFocus()
-
-        NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
-
-        # tkinter 視窗圖示（用 TIFFRepresentation 轉 PNG）
-        import base64
-        from io import BytesIO
-        from PIL import Image as PILImage
-        tiff  = ns_img.TIFFRepresentation()
-        raw   = bytes(tiff)
-        pil   = PILImage.open(BytesIO(raw))
-        buf   = BytesIO()
-        pil.save(buf, format="PNG")
-        photo = tk.PhotoImage(data=base64.b64encode(buf.getvalue()).decode())
+        from AppKit import NSApplication, NSImage
+        ns_img = NSImage.alloc().initWithContentsOfFile_(str(icon_path))
+        if ns_img:
+            NSApplication.sharedApplication().setApplicationIconImage_(ns_img)
+    except Exception:
+        pass
+    try:
+        photo = tk.PhotoImage(file=str(icon_path))
         root.iconphoto(True, photo)
         root._icon_ref = photo
-
     except Exception:
         pass
 
@@ -179,7 +170,7 @@ QR_ASPECT_MAX    = 1.25  # 長寬比上限
 QR_MAX_AREA_PCT  = 9.0   # Raster 面積 < 此值（%）且為正方形 → 視為 QR code
 
 # [B] Raster 全頁圖過濾：章節封面照片
-RASTER_MAX_AREA_PCT = 60  # Raster 專屬最大面積佔比（%）
+RASTER_MAX_AREA_PCT = 80  # Raster 專屬最大面積佔比（%）
 
 # [C] Vector 裝飾線過濾：扁平 cluster 且位於頁首/頁尾區域 → 跳過
 DECO_ZONE_PCT        = 0.12  # 頁面頂/底各 12% 為「裝飾區」
@@ -187,7 +178,17 @@ DECO_MAX_HT_PT       = 40    # cluster 高度 < 此值（pt）才可能是裝飾
 DECO_MIN_WIDTH_RATIO = 0.65  # cluster 寬度 > 頁面此比例才算「橫跨型裝飾」
 
 # [D] Vector cluster 路徑數門檻：過少代表是裝飾圓形/單一 icon → 跳過
-MIN_CLUSTER_PATHS = 5    # cluster 內原始路徑數 < 此值 → 跳過
+MIN_CLUSTER_PATHS = 3    # cluster 內原始路徑數 < 此值 → 跳過
+
+# [E] Panel 偵測：有色填色或邊框的中型矩形 → 視為圖表框背景
+#     用於雙頁跨版設計等向量聚類失效的 PDF
+PANEL_MIN_AREA_PCT    = 2.5   # 面積下限（%）
+PANEL_MAX_AREA_PCT    = 15.0  # 面積上限（%）
+PANEL_MAX_WIDTH_RATIO = 0.70  # 寬度不可超過頁面此比例（排除橫跨型裝飾）
+PANEL_MIN_HEIGHT_PT   = 60    # 高度下限（pt）
+PANEL_MIN_WIDTH_PT    = 80    # 寬度下限（pt）
+PANEL_MIN_Y_RATIO     = 0.10  # 必須在頁面頂部 N% 以下（跳過頁首區）
+PANEL_MAX_ASPECT      = 5.0   # 長寬比上限（過扁或過窄則跳過）
 
 SAVE_TXT = True  # 每頁另存全文 .txt 至 texts/ 資料夾
 
@@ -237,10 +238,24 @@ def _cluster_drawing_rects(rects: list, gap: float) -> list[tuple]:
     return [(groups[k], counts[k]) for k in groups]
 
 
+def _rects_overlap_significantly(a: "fitz.Rect", b: "fitz.Rect", threshold: float = 0.5) -> bool:
+    """兩個 Rect 的交集面積佔較小者面積的比例超過 threshold 則視為重疊。"""
+    inter = a & b
+    if not inter.is_valid:
+        return False
+    inter_area = inter.width * inter.height
+    smaller = min(a.width * a.height, b.width * b.height)
+    return smaller > 0 and inter_area / smaller >= threshold
+
+
 def _detect_chart_regions(page) -> list[tuple]:
     """
     偵測頁面上的圖表區域，回傳 (fitz.Rect, type_str) 列表。
-    type_str 為 'Raster' 或 'Vector'。
+    type_str 為 'Raster'、'Vector' 或 'Panel'。
+
+    方法一：點陣圖片（Raster）
+    方法二：向量路徑 Union-Find 聚類（Vector）
+    方法三：有色填色/邊框的中型矩形（Panel）— 應對雙頁跨版模板干擾聚類的情況
     """
     page_rect = page.rect
     candidates = []
@@ -282,8 +297,9 @@ def _detect_chart_regions(page) -> list[tuple]:
 
             expanded = cluster_rect + (-EXPAND_PT, -EXPAND_PT, EXPAND_PT, EXPAND_PT)
             expanded &= page_rect          # 不超出頁面邊界
+            # 用擴張前的 cluster_rect 做寬度上限判斷，避免寬圖 + EXPAND_PT 後被誤過濾
             if not (expanded.width > MIN_DIM_PT and expanded.height > MIN_DIM_PT
-                    and expanded.width < page_rect.width * MAX_PAGE_RATIO):
+                    and cluster_rect.width < page_rect.width * MAX_PAGE_RATIO):
                 continue
 
             # [C] 裝飾線過濾：扁平 cluster 且位於頁首/頁尾區域
@@ -295,6 +311,43 @@ def _detect_chart_regions(page) -> list[tuple]:
                 continue
 
             candidates.append((expanded, 'Vector'))
+
+    # 方法三：[E] Panel 偵測 — 有色填色或邊框的中型矩形（圖表框背景）
+    # 適用於向量聚類因頁面模板干擾而失效的情況（如雙頁跨版設計）
+    for p in paths:
+        r = p["rect"] & page_rect
+        if not r.is_valid:
+            continue
+        area_pct = r.width * r.height / page_area * 100
+        if not (PANEL_MIN_AREA_PCT <= area_pct <= PANEL_MAX_AREA_PCT):
+            continue
+        if r.width / page_rect.width > PANEL_MAX_WIDTH_RATIO:
+            continue
+        if r.height < PANEL_MIN_HEIGHT_PT or r.width < PANEL_MIN_WIDTH_PT:
+            continue
+        if r.y0 < page_rect.height * PANEL_MIN_Y_RATIO:
+            continue
+        aspect = r.width / r.height if r.height > 0 else 999
+        if aspect < 1 / PANEL_MAX_ASPECT or aspect > PANEL_MAX_ASPECT:
+            continue
+        fill  = p.get("fill")
+        color = p.get("color")
+        # 排除純白無邊框的模板佔位框（fill=(1,1,1) and color=None）
+        if fill == (1.0, 1.0, 1.0) and color is None:
+            continue
+        has_colored_fill = fill is not None and fill != (1.0, 1.0, 1.0)
+        has_stroke       = color is not None
+        if not (has_colored_fill or has_stroke):
+            continue
+
+        expanded = r + (-EXPAND_PT, -EXPAND_PT, EXPAND_PT, EXPAND_PT)
+        expanded &= page_rect
+
+        # 去重：若與已有候選區域大幅重疊則跳過
+        if any(_rects_overlap_significantly(expanded, c) for c, _ in candidates):
+            continue
+
+        candidates.append((expanded, 'Panel'))
 
     return candidates
 

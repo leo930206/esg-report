@@ -10,6 +10,7 @@
 esg-report/
 ├── report-downloader/         ← 爬蟲：自動下載永續報告書 PDF
 ├── pdf-cuter/                 ← 萃取：切割 PDF 圖表並輸出文字
+├── chart-counter/             ← 計數：CLIP zero-shot 統計各公司圖表數量
 ├── dashboard/                 ← 主控台：查看下載與萃取進度
 ├── data/                      ← 所有輸出資料（gitignore，不進版控）
 │   ├── 2015/
@@ -19,7 +20,8 @@ esg-report/
 │   │       ├── 2015_1101_台泥.pdf
 │   │       ├── images/        ← 萃取出的圖表 JPEG
 │   │       └── texts/         ← 每頁文字 TXT
-│   └── 2016/ ... 2022/
+│   ├── 2016/ ... 2024/
+│   └── chart_statistics.xlsx  ← 圖表計數結果（chart-counter 輸出）
 └── requirements.txt
 ```
 
@@ -76,13 +78,42 @@ python pdf-cuter/esg_pdf_cuter.py
 - 頁面文字 TXT → `data/{year}/{公司}/texts/`
 - 統計 Excel → `data/{year}/ESG_Extract_Results_{year}.xlsx`
 
-### Step 3：查看主控台
+### Step 3：統計圖表數量
+
+```bash
+python chart-counter/chart_counter.py
+```
+
+- 選擇年度，調整 CLIP 機率門檻（預設 0.55）
+- 程式讀取 `data/{year}/*/images/*.jpg`，以 CLIP zero-shot 分類每張圖是否為「統計圖表或表格」
+- 結果輸出至 `data/chart_statistics.xlsx`（11 個 sheet：總覽 + 2015–2024 各年）
+- **首次執行**：自動下載 PyTorch（~300 MB）及 CLIP 模型（~600 MB），之後快取於 `~/.cache/huggingface/`
+
+### Step 4：查看主控台
 
 ```bash
 python dashboard/esg-dashboard.py
 ```
 
 或在下載／萃取視窗點擊「🖥 查看主控台」。
+
+---
+
+## chart-counter 操作說明
+
+### 判斷標準
+
+CLIP 比較兩個 prompt 的相似度：
+- **圖表**：含統計數字的圖示（長條、折線、圓餅、散點等）與表格
+- **非圖表**：logo、照片、裝飾圖、地圖、純文字
+
+### 主要參數（chart_counter.py 頂部）
+
+| 參數 | 預設值 | 說明 |
+|------|--------|------|
+| `CHART_THRESHOLD` | 0.55 | CLIP chart 機率門檻（可在 GUI 滑桿調整） |
+| `BATCH_SIZE` | 16 | 每批處理張數 |
+| `CLIP_MODEL_ID` | `openai/clip-vit-base-patch32` | 使用的 CLIP 模型 |
 
 ---
 
