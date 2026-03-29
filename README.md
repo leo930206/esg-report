@@ -12,31 +12,31 @@
 ### 整體運作邏輯
 
 ```
-[ 台灣上市公司官方網站 ]
+ 台灣上市公司官方網站 https://esggenplus.twse.com.tw/inquiry/report?lang=zh-TW
+          │
           │  Selenium 爬蟲
           ▼
- ┌─────────────────────┐
- │  report-downloader  │  → data/{year}/{sid}_{name}.pdf
- │  (Step 1：下載)      │  → ESG_Download_Progress_{year}.xlsx
- └─────────────────────┘
+ ┌───────────────────────┐
+ │   report-downloader   │  → data/{year}/{sid}_{name}.pdf
+ │ (Step 1：ESG報告書下載) │  → ESG_Download_Progress_{year}.xlsx
+ └───────────────────────┘
           │
           ▼
- ┌─────────────────────┐
- │     pdf-cuter       │  → data/{year}/{sid}_{name}/images/*.jpg
- │  (Step 2：萃取圖表)  │  → data/{year}/{sid}_{name}/texts/*.txt
- └─────────────────────┘  → ESG_Extract_Results_{year}.xlsx
+ ┌───────────────────────┐
+ │       pdf-cuter       │  → data/{year}/{sid}_{name}/images/*.jpg
+ │  (Step 2：萃取 chart)  │  → data/{year}/{sid}_{name}/texts/*.txt
+ └───────────────────────┘  → ESG_Extract_Results_{year}.xlsx
           │
           ▼
- ┌─────────────────────┐
- │   chart-counter     │  → data/{year}/{sid}_{name}/charts/*.jpg
- │  (Step 3：AI 分類)  │  → data/chart_statistics.xlsx
- └─────────────────────┘
+ ┌───────────────────────┐
+ │     chart-counter     │  → data/{year}/{sid}_{name}/charts/*.jpg
+ │   (Step 3：cnn 分類)   │  → data/chart_statistics.xlsx
+ └───────────────────────┘
           │
           ▼
- ┌─────────────────────┐
- │     dashboard       │  監控上三個步驟的全域進度
- │  (隨時可開啟)       │
- └─────────────────────┘
+ ┌───────────────────────┐
+ │       dashboard       │  監控上三個步驟的全域進度 (data)
+ └───────────────────────┘
 ```
 
 每個工具皆為獨立可執行的 Python GUI 程式，使用統一的 Apple 設計語言（Helvetica Neue 字體、藍色頂欄、白色卡片配色）。所有工具透過 `data/` 目錄共享狀態，不需要任何中介服務或資料庫。
@@ -108,10 +108,11 @@ esg-report/
     │   │   ├── images/                  # .gitignore 排除（萃取圖片）
     │   │   ├── texts/                   # .gitignore 排除（頁面全文）
     │   │   └── charts/                  # .gitignore 排除（CLIP 確認為圖表）
-    │   └── ...（共 268 家）
-    ├── 2016/ ~ 2022/
-    ├── 2023/                        # 725 家
-    └── 2024/                        # 1,040 家（規模最大）
+    │   └── ...
+    ├── 2016/
+    ├── ...
+    ├── 2023/                       
+    └── 2024/                       
 ```
 
 ### 模組間資料流
@@ -150,7 +151,7 @@ esg-dashboard.py
 - **進度持久化**：每家公司處理完立即更新 Excel，支援隨時中斷繼續
 - **補抓模式**：啟動時詢問是否重試失敗公司，避免重複處理已成功者
 
-#### 工具二：pdf-cuter（v2.7）
+#### 工具二：pdf-cuter
 
 三層圖表偵測演算法，層層過濾：
 
@@ -280,25 +281,25 @@ pip install -r requirements.txt
 
 > **注意**：`transformers` + `torch` 首次安裝約 600 MB；CLIP 模型首次執行時另外下載 ~600 MB。
 
-### Step 1：下載報告書
+### 下載報告書
 
 ```bash
 python report-downloader/esg_downloader.py
 ```
 
-### Step 2：萃取圖表
+### 萃取圖表
 
 ```bash
 python pdf-cuter/esg_pdf_cuter.py
 ```
 
-### Step 3：AI 圖表分類
+### cnn 圖表分類
 
 ```bash
 python chart-counter/chart_counter.py
 ```
 
-### Step 4：查看進度面板
+### 查看進度面板
 
 ```bash
 python dashboard/esg-dashboard.py
@@ -321,3 +322,37 @@ python dashboard/esg-dashboard.py
 | 2023 | 725 | |
 | 2024 | 1,040 | 規模最大，持續成長 |
 | **合計** | **~5,036** | 目標：1,078 家 × 10 年 = 10,780 份 |
+
+## 讀取與下載路徑
+
+### 1. `esg_downloader.py`（下載器）
+* **讀取：**
+  * `tools/report-downloader/tw_listed.xlsx` — 上市公司清單
+  * `data/<year>/ESG_Download_Progress_<year>.xlsx` — 讀取舊進度（斷點續傳）
+* **寫入：**
+  * `data/<year>/<公司>/2015_1101_台泥.pdf` — 下載的 PDF
+  * `data/<year>/ESG_Download_Progress_<year>.xlsx` — 更新下載進度
+  * `tools/report-downloader/logs/ESG_Log_*.txt` — 執行日誌
+
+### 2. `esg_pdf_cuter.py`（圖表萃取）
+* **讀取：**
+  * `data/<year>/<公司>/*.pdf` — 原始 PDF
+* **寫入：**
+  * `data/<year>/<公司>/images/*.jpg` — 萃取的圖片
+  * `data/<year>/<公司>/texts/*.txt` — 每頁文字
+  * `data/<year>/<公司>/garbled_pages.txt` — 無法讀取的頁面記錄
+  * `data/<year>/ESG_Extract_Results_<year>.xlsx` — 萃取統計
+
+### 3. `chart_counter.py`（圖表計數）
+* **讀取：**
+  * `data/<year>/<公司>/images/*.jpg` — 萃取的圖片
+* **寫入：**
+  * `data/<year>/<公司>/charts/*.jpg` — 判定為圖表的圖片（複製）
+  * `data/chart_statistics.xlsx` — 各公司圖表數量統計
+
+### 4. `esg-dashboard.py`（主控台）
+* **讀取（只讀，不寫入）：**
+  * `data/<year>/ESG_Download_Progress_<year>.xlsx` — 下載進度
+  * `data/<year>/ESG_Extract_Results_<year>.xlsx` — 萃取統計
+  * `data/<year>/<公司>/images/*.jpg` — （僅計算圖片數量）
+  * `data/<year>/<公司>/garbled_pages.txt` — 亂碼頁面記錄

@@ -14,18 +14,6 @@ from datetime import datetime
 import fitz           # PyMuPDF
 import pandas as pd
 
-__version__ = "2.7"
-# v2.0 — 初版 GUI + Union-Find 聚類 + EXPAND_PT=20 + 文字遮罩
-# v2.1 — 加入 A/B/C/D 過濾（QR、全頁圖、裝飾線、路徑數門檻）
-# v2.2 — 移除文字遮罩/文字擴張，EXPAND_PT=20→50
-# v2.3 — CLUSTER_GAP_PT=80→40，避免同頁兩張圖被合併成一個框
-# v2.4 — 恢復 texts/ 全頁文字存檔輸出
-# v2.5 — 圖片改 JPEG q85 + RENDER_SCALE=2；亂碼頁記錄至 garbled_pages.txt
-# v2.6 — 修正寬圖被過度過濾：MAX_PAGE_RATIO 改用 cluster 原始寬度判斷；
-#         RASTER_MAX_AREA_PCT 60→80；MIN_CLUSTER_PATHS 5→3
-# v2.7 — 新增方法三：Panel 偵測（有色填色/邊框的中型矩形作為圖表框），
-#         解決雙頁跨版模板導致向量聚類失敗的問題
-
 DASHBOARD_PY = Path(__file__).parent.parent / "dashboard" / "esg-dashboard.py"  # 同在 tools/
 
 def _open_dashboard():
@@ -619,7 +607,7 @@ def create_startup_window():
 def create_progress_window(years):
     year_label = '、'.join(str(y) for y in years)
     root = tk.Tk()
-    root.title(f"🌱 ESG 圖表萃取系統 v{__version__} | {year_label} 年")
+    root.title(f"🌱 ESG 圖表萃取系統 | {year_label} 年")
     root.geometry("1000x700")
     root.configure(bg=APPLE_BG)
     root.resizable(True, True)
