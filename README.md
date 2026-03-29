@@ -2,6 +2,7 @@
 
 > 台灣上市公司永續報告書（ESG）大規模批量下載、圖表萃取與 AI 分類平台
 > 適用年份：2015 ～ 2024（共 10 個年度）
+> 原始碼：https://github.com/leo930206/esg-report
 
 ---
 
@@ -17,20 +18,26 @@
           │  Selenium 爬蟲
           ▼
  ┌───────────────────────┐
- │   report-downloader   │  → data/{year}/{sid}_{name}.pdf
+ │    esg_downloader     │  → data/{year}/{sid}_{name}.pdf
  │ (Step 1：ESG報告書下載) │  → ESG_Download_Progress_{year}.xlsx
  └───────────────────────┘
           │
           ▼
  ┌───────────────────────┐
- │       pdf-cuter       │  → data/{year}/{sid}_{name}/images/*.jpg
+ │   esg_pdf_cuter.py    │  → data/{year}/{sid}_{name}/images/*.jpg
  │  (Step 2：萃取 chart)  │  → data/{year}/{sid}_{name}/texts/*.txt
  └───────────────────────┘  → ESG_Extract_Results_{year}.xlsx
           │
           ▼
  ┌───────────────────────┐
- │     chart-counter     │  → data/{year}/{sid}_{name}/charts/*.jpg
- │   (Step 3：cnn 分類)   │  → data/chart_statistics.xlsx
+ │   chart-classifier    │  → data/charts/{category}/*.jpg
+ │  (Step 3：AI 圖表分類) │  → data/charts/clip_labeling_results.xlsx
+ └───────────────────────┘
+          │  (手動清理後)
+          ▼
+ ┌───────────────────────┐
+ │   resnet_trainer.py   │  → models/resnet50_chart_best.pth
+ │  (Step 4：模型訓練)    │  → models/training_log.csv
  └───────────────────────┘
           │
           ▼
@@ -40,6 +47,8 @@
 ```
 
 每個工具皆為獨立可執行的 Python GUI 程式，使用統一的 Apple 設計語言（Helvetica Neue 字體、藍色頂欄、白色卡片配色）。所有工具透過 `data/` 目錄共享狀態，不需要任何中介服務或資料庫。
+
+> **當前進度（2026-03）**：Step 1（下載）與 Step 2（萃取）已完成 2015 年份，其餘年份持續進行中。Step 3（CLIP 分類）已完成工具開發，等待圖片萃取完畢後執行。
 
 ---
 
@@ -58,7 +67,7 @@
 |------|------|-----------------|
 | **PyMuPDF (fitz)** | 1.26.5 | PDF 核心引擎。呼叫 `get_images()`、`get_drawings()`、`get_text()`、`get_pixmap()` 進行圖表偵測與高解析度渲染 |
 | **pandas** | 2.3.3 | 讀寫進度 Excel（下載進度、萃取結果）；狀態統計與篩選 |
-| **openpyxl** | 3.1.5 | chart-counter 的多 Sheet Excel 輸出；pandas Excel 後端 |
+| **openpyxl** | 3.1.5 | chart-classifier 的多 Sheet Excel 輸出；pandas Excel 後端 |
 | **Pillow** | 11.3.0 | CLIP 分類前的圖片載入與 RGB 轉換 |
 | **selenium** | 4.36.0 | 無頭 Chrome 瀏覽器控制，模擬人工操作下載 PDF |
 | **transformers** | ≥4.40.0 | HuggingFace CLIP 模型管理（`CLIPModel`、`CLIPProcessor`） |
@@ -83,36 +92,47 @@ esg-report/
 ├── requirements.txt                 # 全域相依套件清單
 ├── .gitignore                       # 排除 PDF、圖片、.venv
 │
-├── report-downloader/               # 工具一：爬蟲下載器
-│   ├── esg_downloader.py            # 主程式（~900 行）
-│   ├── tw_listed.xlsx               # 台灣上市公司清單（1,078 家）
-│   └── logs/                        # 每次執行的完整日誌（時間戳命名）
-│
-├── pdf-cuter/                       # 工具二：PDF 圖表萃取器
-│   ├── esg_pdf_cuter.py             # 主程式（~800 行，v2.7）
-│   └── logs/                        # 萃取執行日誌
-│
-├── chart-counter/                   # 工具三：CLIP AI 圖表分類器
-│   └── chart_counter.py             # 主程式（~591 行）
-│
-├── dashboard/                       # 工具四：統一監控面板
-│   └── esg-dashboard.py             # 主程式（~671 行）
-│
-└── data/                            # 所有輸出資料根目錄（大部分被 .gitignore 排除）
-    ├── chart_statistics.xlsx        # CLIP 分類結果彙總（11 個 Sheet）
-    ├── 2015/
-    │   ├── ESG_Download_Progress_2015.xlsx
-    │   ├── ESG_Extract_Results_2015.xlsx
-    │   ├── 2015_1101_台泥/
-    │   │   ├── 2015_1101_台泥.pdf       # .gitignore 排除
-    │   │   ├── images/                  # .gitignore 排除（萃取圖片）
-    │   │   ├── texts/                   # .gitignore 排除（頁面全文）
-    │   │   └── charts/                  # .gitignore 排除（CLIP 確認為圖表）
-    │   └── ...
-    ├── 2016/
-    ├── ...
-    ├── 2023/                       
-    └── 2024/                       
+└── tools/
+    ├── report-downloader/           # 工具一：爬蟲下載器
+    │   ├── esg_downloader.py        # 主程式（~900 行）
+    │   ├── tw_listed.xlsx           # 台灣上市公司清單（1,078 家）
+    │   └── logs/                    # 每次執行的完整日誌（時間戳命名）
+    │
+    ├── pdf-cuter/                   # 工具二：PDF 圖表萃取器
+    │   ├── esg_pdf_cuter.py         # 主程式（~800 行，v2.7）
+    │   └── logs/                    # 萃取執行日誌
+    │
+    ├── chart-classifier/            # 工具三：AI 圖表分類器
+    │   ├── clip_labeler.py          # CLIP 零樣本分類 GUI（5 類）
+    │   └── resnet_trainer.py        # ResNet-50 fine-tune 訓練腳本
+    │
+    └── dashboard/                   # 工具四：統一監控面板
+        └── esg-dashboard.py         # 主程式（~671 行）
+
+data/                                # 所有輸出資料根目錄（大部分被 .gitignore 排除）
+├── charts/                          # CLIP 分類輸出（執行 clip_labeler.py 後產生）
+│   ├── bar/                         # 長條圖
+│   ├── line/                        # 折線圖
+│   ├── pie/                         # 圓餅圖
+│   ├── map/                         # 數字地圖
+│   ├── non_chart/                   # 非圖表
+│   └── clip_labeling_results.xlsx   # 分類結果彙總
+├── 2015/
+│   ├── ESG_Download_Progress_2015.xlsx
+│   ├── ESG_Extract_Results_2015.xlsx
+│   ├── 2015_1101_台泥/
+│   │   ├── 2015_1101_台泥.pdf       # .gitignore 排除
+│   │   ├── images/                  # .gitignore 排除（萃取圖片）
+│   │   └── texts/                   # .gitignore 排除（頁面全文）
+│   └── ...
+├── 2016/
+├── ...
+├── 2023/
+└── 2024/
+
+models/                              # ResNet-50 訓練輸出（執行 resnet_trainer.py 後產生）
+├── resnet50_chart_best.pth          # 最佳模型權重
+└── training_log.csv                 # 每 epoch 的 loss / accuracy
 ```
 
 ### 模組間資料流
@@ -131,14 +151,21 @@ esg_pdf_cuter.py
     │  寫出：data/{year}/**/texts/*.txt
     │  寫出：data/{year}/ESG_Extract_Results_{year}.xlsx
     ▼
-chart_counter.py
+clip_labeler.py
     │  讀入：data/{year}/**/images/*.jpg
-    │  寫出：data/{year}/**/charts/*.jpg（圖表複本）
-    │  寫出：data/chart_statistics.xlsx
+    │  寫出：data/charts/{category}/{year}_{company}_{filename}.jpg
+    │  寫出：data/charts/clip_labeling_results.xlsx
+    ▼
+ （手動清理 data/charts/ 各類別資料夾中的分類錯誤圖片）
+    ▼
+resnet_trainer.py
+    │  讀入：data/charts/{category}/*.jpg
+    │  寫出：models/resnet50_chart_best.pth
+    │  寫出：models/training_log.csv
     ▼
 esg-dashboard.py
     │  讀入：所有 ESG_Download_Progress_*.xlsx
-    │  讀入：掃描 images/ charts/ garbled_pages.txt
+    │  讀入：掃描 images/ garbled_pages.txt
     │  顯示：跨年度進度總覽
 ```
 
@@ -173,12 +200,22 @@ esg-dashboard.py
   └─ 解決雙頁跨版 PDF 的聚類失效問題
 ```
 
-#### 工具三：chart-counter
+#### 工具三：chart-classifier
 
+分為兩個腳本，對應「自動標籤」與「模型訓練」兩個階段：
+
+**clip_labeler.py（CLIP 零樣本分類）**
 - **模型**：`openai/clip-vit-base-patch32`，零樣本分類（不需要訓練資料）
-- **雙 Prompt 策略**：圖表描述 vs 非圖表描述，取 softmax 後的相似度分數
-- **分類門檻**：GUI 滑桿可即時調整（0.3～0.9），預設 0.55
+- **5 類分類**：bar（長條圖）/ line（折線圖）/ pie（圓餅圖）/ map（數字地圖）/ non_chart（非圖表）
+- **多 Prompt 平均**：每類設計 3 個文字描述，取平均相似度做最終得分，比單一 Prompt 更穩定
+- **輸出**：複製圖片到 `data/charts/{category}/`，並輸出 Excel 彙總（年份 × 公司 × 類別）
 - **GPU 加速**：自動偵測 Apple Silicon MPS / NVIDIA CUDA / CPU 降級
+
+**resnet_trainer.py（ResNet-50 Fine-tune）**
+- **基底模型**：ImageNet 預訓練 ResNet-50，只替換最後一層 fc（1000 類 → 5 類）
+- **資料增強**：RandomCrop、RandomHorizontalFlip、ColorJitter，提升泛化能力
+- **訓練細節**：AdamW + CosineAnnealingLR，自動存最佳 val accuracy 的 checkpoint
+- **適用時機**：CLIP 分類完並手動清理標籤後執行，可得精準度更高的部署模型
 
 #### 工具四：dashboard
 
@@ -284,25 +321,35 @@ pip install -r requirements.txt
 ### 下載報告書
 
 ```bash
-python report-downloader/esg_downloader.py
+python tools/report-downloader/esg_downloader.py
 ```
 
 ### 萃取圖表
 
 ```bash
-python pdf-cuter/esg_pdf_cuter.py
+python tools/pdf-cuter/esg_pdf_cuter.py
 ```
 
-### cnn 圖表分類
+### CLIP 圖表分類（產出訓練資料）
 
 ```bash
-python chart-counter/chart_counter.py
+python tools/chart-classifier/clip_labeler.py
+# 若只跑特定年份：
+python tools/chart-classifier/clip_labeler.py --years 2021 2022
+```
+
+### ResNet-50 訓練（手動清理後執行）
+
+```bash
+python tools/chart-classifier/resnet_trainer.py --epochs 20
+# 資料量少時可凍結前層：
+python tools/chart-classifier/resnet_trainer.py --epochs 20 --freeze_backbone
 ```
 
 ### 查看進度面板
 
 ```bash
-python dashboard/esg-dashboard.py
+python tools/dashboard/esg-dashboard.py
 ```
 
 ---
@@ -343,12 +390,19 @@ python dashboard/esg-dashboard.py
   * `data/<year>/<公司>/garbled_pages.txt` — 無法讀取的頁面記錄
   * `data/<year>/ESG_Extract_Results_<year>.xlsx` — 萃取統計
 
-### 3. `chart_counter.py`（圖表計數）
+### 3. `clip_labeler.py`（CLIP 圖表分類）
 * **讀取：**
   * `data/<year>/<公司>/images/*.jpg` — 萃取的圖片
 * **寫入：**
-  * `data/<year>/<公司>/charts/*.jpg` — 判定為圖表的圖片（複製）
-  * `data/chart_statistics.xlsx` — 各公司圖表數量統計
+  * `data/charts/{bar,line,pie,map,non_chart}/{year}_{company}_{file}.jpg` — 分類後圖片（複製）
+  * `data/charts/clip_labeling_results.xlsx` — 分類結果彙總
+
+### 3b. `resnet_trainer.py`（ResNet-50 訓練）
+* **讀取：**
+  * `data/charts/{category}/*.jpg` — 經手動清理的訓練資料
+* **寫入：**
+  * `models/resnet50_chart_best.pth` — 最佳模型權重
+  * `models/training_log.csv` — 訓練記錄
 
 ### 4. `esg-dashboard.py`（主控台）
 * **讀取（只讀，不寫入）：**
@@ -356,3 +410,47 @@ python dashboard/esg-dashboard.py
   * `data/<year>/ESG_Extract_Results_<year>.xlsx` — 萃取統計
   * `data/<year>/<公司>/images/*.jpg` — （僅計算圖片數量）
   * `data/<year>/<公司>/garbled_pages.txt` — 亂碼頁面記錄
+---
+
+## 接下來要做什麼
+
+### 短期（Step 2 完成前）
+
+1. **繼續執行 pdf-cuter（Step 2）**
+   - 目前 2015 年已萃取完畢；2016～2024 尚未執行
+   - 執行順序建議由小年份往大：2016 → 2017 → … → 2024
+   - 指令：`python tools/pdf-cuter/esg_pdf_cuter.py`
+
+2. **確認萃取品質**
+   - 每年執行完後，抽查 `data/{year}/ESG_Extract_Results_{year}.xlsx`
+   - 注意 `images_count = 0` 的公司（可能有雙頁跨版問題）
+
+### 中期（Step 3：圖表分類）
+
+3. **安裝 CLIP 相依套件**（若尚未安裝）
+   ```bash
+   pip install transformers torch torchvision openpyxl tqdm
+   ```
+
+4. **執行 clip_labeler.py**
+   - 掃描所有 `data/{year}/{company}/images/`，自動分類 5 類
+   - 輸出到 `data/charts/{category}/`
+   - 指令：`python tools/chart-classifier/clip_labeler.py`
+   - 首次執行會下載 CLIP 模型（~600 MB，存入 `~/.cache/huggingface/`）
+
+5. **手動清理分類結果**
+   - 打開 `data/charts/` 各子目錄，把分類錯的圖片拖到正確目錄
+   - 重點清查 `non_chart/`（容易有圖表被誤判為非圖表）
+   - 這步驟決定 ResNet-50 的訓練品質，不可略過
+
+### 長期（Step 4：模型訓練）
+
+6. **執行 resnet_trainer.py**
+   - 手動清理完成後執行
+   - 指令：`python tools/chart-classifier/resnet_trainer.py --epochs 20`
+   - 資料量少時加 `--freeze_backbone`
+   - 訓練完成後模型存至 `models/resnet50_chart_best.pth`
+
+7. **（選做）整合推理腳本**
+   - 用訓練好的 ResNet-50 對新年份的圖片進行快速批量推理
+   - 可取代 CLIP 的零樣本分類，速度更快、精準度更高
