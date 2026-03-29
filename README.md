@@ -18,7 +18,7 @@
           │  Selenium 爬蟲
           ▼
  ┌───────────────────────┐
- │    esg_downloader     │  → data/{year}/{sid}_{name}.pdf
+ │   esg_downloader.py   │  → data/{year}/{sid}_{name}.pdf
  │ (Step 1：ESG報告書下載) │  → ESG_Download_Progress_{year}.xlsx
  └───────────────────────┘
           │
@@ -30,19 +30,19 @@
           │
           ▼
  ┌───────────────────────┐
- │   chart-classifier    │  → data/charts/{category}/*.jpg
- │  (Step 3：AI 圖表分類) │  → data/charts/clip_labeling_results.xlsx
+ │   clip-classifier.py  │  → data/charts/{category}/*.jpg
+ │ (Step 3：CLIP 圖表分類) │  → data/charts/clip_labeling_results.xlsx
  └───────────────────────┘
           │  (手動清理後)
           ▼
  ┌───────────────────────┐
  │   resnet_trainer.py   │  → models/resnet50_chart_best.pth
- │  (Step 4：模型訓練)    │  → models/training_log.csv
+ │  (Step 4：CNN 模型訓練) │  → models/training_log.csv
  └───────────────────────┘
           │
           ▼
  ┌───────────────────────┐
- │       dashboard       │  監控上三個步驟的全域進度 (data)
+ │   esg_dashboard.py    │  監控上述步驟的全域進度 (data)
  └───────────────────────┘
 ```
 
@@ -103,14 +103,14 @@ esg-report/
     │   └── logs/                    # 萃取執行日誌
     │
     ├── chart-classifier/            # 工具三：AI 圖表分類器
-    │   ├── clip_labeler.py          # CLIP 零樣本分類 GUI（5 類）
+    │   ├── clip_classifier.py          # CLIP 零樣本分類 GUI（5 類）
     │   └── resnet_trainer.py        # ResNet-50 fine-tune 訓練腳本
     │
     └── dashboard/                   # 工具四：統一監控面板
-        └── esg-dashboard.py         # 主程式（~671 行）
+        └── esg_dashboard.py         # 主程式（~671 行）
 
 data/                                # 所有輸出資料根目錄（大部分被 .gitignore 排除）
-├── charts/                          # CLIP 分類輸出（執行 clip_labeler.py 後產生）
+├── charts/                          # CLIP 分類輸出（執行 clip_classifier.py 後產生）
 │   ├── bar/                         # 長條圖
 │   ├── line/                        # 折線圖
 │   ├── pie/                         # 圓餅圖
@@ -151,7 +151,7 @@ esg_pdf_cuter.py
     │  寫出：data/{year}/**/texts/*.txt
     │  寫出：data/{year}/ESG_Extract_Results_{year}.xlsx
     ▼
-clip_labeler.py
+clip_classifier.py
     │  讀入：data/{year}/**/images/*.jpg
     │  寫出：data/charts/{category}/{year}_{company}_{filename}.jpg
     │  寫出：data/charts/clip_labeling_results.xlsx
@@ -163,7 +163,7 @@ resnet_trainer.py
     │  寫出：models/resnet50_chart_best.pth
     │  寫出：models/training_log.csv
     ▼
-esg-dashboard.py
+esg_dashboard.py
     │  讀入：所有 ESG_Download_Progress_*.xlsx
     │  讀入：掃描 images/ garbled_pages.txt
     │  顯示：跨年度進度總覽
@@ -204,7 +204,7 @@ esg-dashboard.py
 
 分為兩個腳本，對應「自動標籤」與「模型訓練」兩個階段：
 
-**clip_labeler.py（CLIP 零樣本分類）**
+**clip_classifier.py（CLIP 零樣本分類）**
 - **模型**：`openai/clip-vit-base-patch32`，零樣本分類（不需要訓練資料）
 - **5 類分類**：bar（長條圖）/ line（折線圖）/ pie（圓餅圖）/ map（數字地圖）/ non_chart（非圖表）
 - **多 Prompt 平均**：每類設計 3 個文字描述，取平均相似度做最終得分，比單一 Prompt 更穩定
@@ -333,9 +333,9 @@ python tools/pdf-cuter/esg_pdf_cuter.py
 ### CLIP 圖表分類（產出訓練資料）
 
 ```bash
-python tools/chart-classifier/clip_labeler.py
+python tools/chart-classifier/clip_classifier.py
 # 若只跑特定年份：
-python tools/chart-classifier/clip_labeler.py --years 2021 2022
+python tools/chart-classifier/clip_classifier.py --years 2021 2022
 ```
 
 ### ResNet-50 訓練（手動清理後執行）
@@ -349,7 +349,7 @@ python tools/chart-classifier/resnet_trainer.py --epochs 20 --freeze_backbone
 ### 查看進度面板
 
 ```bash
-python tools/dashboard/esg-dashboard.py
+python tools/dashboard/esg_dashboard.py
 ```
 
 ---
@@ -390,7 +390,7 @@ python tools/dashboard/esg-dashboard.py
   * `data/<year>/<公司>/garbled_pages.txt` — 無法讀取的頁面記錄
   * `data/<year>/ESG_Extract_Results_<year>.xlsx` — 萃取統計
 
-### 3. `clip_labeler.py`（CLIP 圖表分類）
+### 3. `clip_classifier.py`（CLIP 圖表分類）
 * **讀取：**
   * `data/<year>/<公司>/images/*.jpg` — 萃取的圖片
 * **寫入：**
@@ -404,53 +404,9 @@ python tools/dashboard/esg-dashboard.py
   * `models/resnet50_chart_best.pth` — 最佳模型權重
   * `models/training_log.csv` — 訓練記錄
 
-### 4. `esg-dashboard.py`（主控台）
+### 4. `esg_dashboard.py`（主控台）
 * **讀取（只讀，不寫入）：**
   * `data/<year>/ESG_Download_Progress_<year>.xlsx` — 下載進度
   * `data/<year>/ESG_Extract_Results_<year>.xlsx` — 萃取統計
   * `data/<year>/<公司>/images/*.jpg` — （僅計算圖片數量）
   * `data/<year>/<公司>/garbled_pages.txt` — 亂碼頁面記錄
----
-
-## 接下來要做什麼
-
-### 短期（Step 2 完成前）
-
-1. **繼續執行 pdf-cuter（Step 2）**
-   - 目前 2015 年已萃取完畢；2016～2024 尚未執行
-   - 執行順序建議由小年份往大：2016 → 2017 → … → 2024
-   - 指令：`python tools/pdf-cuter/esg_pdf_cuter.py`
-
-2. **確認萃取品質**
-   - 每年執行完後，抽查 `data/{year}/ESG_Extract_Results_{year}.xlsx`
-   - 注意 `images_count = 0` 的公司（可能有雙頁跨版問題）
-
-### 中期（Step 3：圖表分類）
-
-3. **安裝 CLIP 相依套件**（若尚未安裝）
-   ```bash
-   pip install transformers torch torchvision openpyxl tqdm
-   ```
-
-4. **執行 clip_labeler.py**
-   - 掃描所有 `data/{year}/{company}/images/`，自動分類 5 類
-   - 輸出到 `data/charts/{category}/`
-   - 指令：`python tools/chart-classifier/clip_labeler.py`
-   - 首次執行會下載 CLIP 模型（~600 MB，存入 `~/.cache/huggingface/`）
-
-5. **手動清理分類結果**
-   - 打開 `data/charts/` 各子目錄，把分類錯的圖片拖到正確目錄
-   - 重點清查 `non_chart/`（容易有圖表被誤判為非圖表）
-   - 這步驟決定 ResNet-50 的訓練品質，不可略過
-
-### 長期（Step 4：模型訓練）
-
-6. **執行 resnet_trainer.py**
-   - 手動清理完成後執行
-   - 指令：`python tools/chart-classifier/resnet_trainer.py --epochs 20`
-   - 資料量少時加 `--freeze_backbone`
-   - 訓練完成後模型存至 `models/resnet50_chart_best.pth`
-
-7. **（選做）整合推理腳本**
-   - 用訓練好的 ResNet-50 對新年份的圖片進行快速批量推理
-   - 可取代 CLIP 的零樣本分類，速度更快、精準度更高

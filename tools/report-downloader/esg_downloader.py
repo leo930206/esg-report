@@ -31,7 +31,7 @@ STANDARD_PATTERN = re.compile(r'^\d{4}_\d+_.+\.pdf$')
 _BASE_DIR        = Path(__file__).parent.absolute()
 _DATA_DIR        = _BASE_DIR.parent.parent / "data"    # 統一輸出根目錄（與 esg_pdf_cuter 共用）
 logs_folder      = str(_BASE_DIR / "logs")
-DASHBOARD_PY     = _BASE_DIR.parent / "dashboard" / "esg-dashboard.py"  # 同在 tools/
+DASHBOARD_PY     = _BASE_DIR.parent / "dashboard" / "esg_dashboard.py"  # 同在 tools/
 
 def _open_dashboard():
     if DASHBOARD_PY.exists():

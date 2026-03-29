@@ -14,7 +14,7 @@ from datetime import datetime
 import fitz           # PyMuPDF
 import pandas as pd
 
-DASHBOARD_PY = Path(__file__).parent.parent / "dashboard" / "esg-dashboard.py"  # 同在 tools/
+DASHBOARD_PY = Path(__file__).parent.parent / "dashboard" / "esg_dashboard.py"  # 同在 tools/
 
 def _open_dashboard():
     if DASHBOARD_PY.exists():
